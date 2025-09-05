@@ -1,0 +1,42 @@
+<app-game/>
+
+<div class="controls">
+  <div>
+    Latency
+  </div>
+  <div>
+    <app-slider [(value)]="config.config.actionLatency" [maxValue]="config.config.maxActionLatency" [step]="100"></app-slider>
+  </div>
+  <div>
+    {{ config.config.actionLatency }}ms
+  </div>
+  @if (!config.config.fogDisabled) {
+    <div>
+      Fog
+    </div>
+    <div>
+      <app-slider [(value)]="config.lookAhead" [maxValue]="5"></app-slider>
+    </div>
+    <div>
+      {{ config.lookAhead() * 10 }}%
+    </div>
+  }
+  <div>
+    Errors
+  </div>
+  <div>
+    <app-slider [(value)]="config.config.errorRate" [maxValue]="100" [step]="10"></app-slider>
+  </div>
+  <div>
+    {{ config.config.errorRate }}%
+  </div>
+  <div>
+    Speed
+  </div>
+  <div>
+    <app-slider [(value)]="config.speed" [maxValue]="9"></app-slider>
+  </div>
+  <div>
+    {{ config.speed() + 1 }}
+  </div>
+</div>

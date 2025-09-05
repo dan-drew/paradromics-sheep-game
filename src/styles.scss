@@ -1,1 +1,47 @@
-/* You can add global styles to this file, and also import other style files */
+@import url('https://fonts.googleapis.com/css2?family=Jersey+10&display=swap');
+
+:root {
+  font-family: "Jersey 10", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-size: 20px;
+}
+
+.column, .row {
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.column {
+  flex-direction: column;
+}
+
+.row {
+  flex-direction: row;
+}
+
+.flex-fill {
+  flex: 1;
+}
+
+.w100, .wh100 {
+  width: 100%;
+}
+
+.h100, .wh100 {
+  height: 100%;
+}
+
+.block {
+  display: block;
+}
+
+.inline-block {
+  display: inline-block;
+}
+
+.container {
+  display: contents;
+}
+
+@import "game.css";

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type {Dimensions} from './dimensions.js';
+import type {Dimensions} from './dimensions';
 
 // TODO(salg): Use preprocessor to filter IOS code at build time.
 export const IS_IOS: boolean = /CriOS/.test(window.navigator.userAgent);

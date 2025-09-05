@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {FPS, IS_HIDPI} from './constants.js';
-import type {Dimensions} from './dimensions.js';
-import {Runner} from './offline.js';
-import type {SpritePosition} from './sprite_position.js';
+import {FPS, IS_HIDPI} from './constants';
+import type {Dimensions} from './dimensions';
+import {Runner} from './offline';
+import type {SpritePosition} from './sprite_position';
 
 
 export interface HorizonLineConfig {
@@ -44,7 +44,7 @@ export class HorizonLine {
     this.spritePos = {x: sourceX, y: sourceY};
     const canvasContext = canvas.getContext('2d');
     assert(canvasContext);
-    this.canvasCtx = canvasContext;
+    this.canvasCtx = canvasContext!;
     this.dimensions = {width: lineConfig.width, height: lineConfig.height};
 
     this.sourceXPos =

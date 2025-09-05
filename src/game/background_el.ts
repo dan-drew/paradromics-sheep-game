@@ -1,13 +1,14 @@
+// @ts-nocheck
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
 
-import {IS_HIDPI} from './constants.js';
-import {Runner} from './offline.js';
-import type {SpritePosition} from './sprite_position.js';
-import {getRandomNum} from './utils.js';
+import {assert} from "./assert";
+import {IS_HIDPI} from './constants';
+import {Runner} from './offline';
+import type {SpritePosition} from './sprite_position';
+import {getRandomNum} from './utils';
 
 export interface BackgroundElSpriteConfig {
   height: number;

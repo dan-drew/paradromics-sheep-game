@@ -1,16 +1,17 @@
+// @ts-nocheck
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {IS_HIDPI, IS_RTL} from './constants.js';
-import type {Dimensions} from './dimensions.js';
-import {Runner} from './offline.js';
-import {spriteDefinitionByType} from './offline_sprite_definitions.js';
-import type {SpritePosition} from './sprite_position.js';
-import type {Trex} from './trex.js';
-import {getTimeStamp} from './utils.js';
+import {IS_HIDPI, IS_RTL} from './constants';
+import type {Dimensions} from './dimensions';
+import {Runner} from './offline';
+import {spriteDefinitionByType} from './offline_sprite_definitions';
+import type {SpritePosition} from './sprite_position';
+import type {Trex} from './trex';
+import {getTimeStamp} from './utils';
 
 const RESTART_ANIM_DURATION: number = 875;
 const LOGO_PAUSE_DURATION: number = 875;

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type {BackgroundElConfig, BackgroundElSpriteConfig} from './background_el.js';
-import type {AltGameEndConfig, AltGameModePanelDimensions} from './game_over_panel.js';
-import type {HorizonLineConfig} from './horizon_line.js';
-import type {SpritePosition} from './sprite_position.js';
-import type {AltGameModeSpriteConfig as AltTrexSpriteDefinition} from './trex.js';
+import type {BackgroundElConfig, BackgroundElSpriteConfig} from './background_el';
+import type {AltGameEndConfig, AltGameModePanelDimensions} from './game_over_panel';
+import type {HorizonLineConfig} from './horizon_line';
+import type {SpritePosition} from './sprite_position';
+import type {AltGameModeSpriteConfig as AltTrexSpriteDefinition} from './trex';
 
 /*
  * List of alternative game types defined in spriteDefinitionByType.

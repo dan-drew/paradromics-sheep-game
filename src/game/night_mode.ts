@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {IS_HIDPI} from './constants.js';
-import {Runner} from './offline.js';
-import {spriteDefinitionByType} from './offline_sprite_definitions.js';
-import type {SpritePosition} from './sprite_position.js';
-import {getRandomNum} from './utils.js';
+import {IS_HIDPI} from './constants';
+import {Runner} from './offline';
+import {spriteDefinitionByType} from './offline_sprite_definitions';
+import type {SpritePosition} from './sprite_position';
+import {getRandomNum} from './utils';
 
 
 const PHASES: number[] = [140, 120, 100, 60, 40, 20, 0];
@@ -50,7 +50,7 @@ export class NightMode {
     this.spritePos = spritePos;
     const canvasContext = canvas.getContext('2d');
     assert(canvasContext);
-    this.canvasCtx = canvasContext;
+    this.canvasCtx = canvasContext!;
     this.containerWidth = containerWidth;
     this.placeStars();
   }

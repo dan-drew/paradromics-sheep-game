@@ -1,16 +1,17 @@
+// @ts-nocheck
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {FPS, IS_HIDPI, IS_MOBILE} from './constants.js';
-import type {Dimensions} from './dimensions.js';
-import {Runner} from './offline.js';
-import type {ObstacleType} from './offline_sprite_definitions.js';
-import {CollisionBox} from './offline_sprite_definitions.js';
-import type {SpritePosition} from './sprite_position.js';
-import {getRandomNum} from './utils.js';
+import {FPS, IS_HIDPI, IS_MOBILE} from './constants';
+import type {Dimensions} from './dimensions';
+import {Runner} from './offline';
+import type {ObstacleType} from './offline_sprite_definitions';
+import {CollisionBox} from './offline_sprite_definitions';
+import type {SpritePosition} from './sprite_position';
+import {getRandomNum} from './utils';
 
 /**
  * Coefficient for calculating the maximum gap.

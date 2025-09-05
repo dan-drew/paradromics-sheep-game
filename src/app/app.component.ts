@@ -1,16 +1,29 @@
-import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import {Component, inject} from '@angular/core';
+import {SliderComponent} from "../slider/slider.component";
+import {GameComponent} from "../game/game.component";
+import {GameConfigService} from "../game/game-config.service";
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
-  template: `
-    <h1>Welcome to {{title}}!</h1>
-
-    <router-outlet />
-  `,
-  styles: [],
+  imports: [
+    SliderComponent,
+    GameComponent
+  ],
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.scss'],
+  host: {
+    class: 'column'
+  }
 })
 export class AppComponent {
-  title = 'dino-game';
+  protected readonly config = inject(GameConfigService);
+
+  title = 'Sheep Game';
+
+  constructor() {
+    if (window.location.search.includes('fog=0')) {
+      this.config.config.fogDisabled = true
+      this.config.config.maxActionLatency = 1000
+    }
+  }
 }

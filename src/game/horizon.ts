@@ -1,18 +1,18 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {BackgroundEl, getGlobalConfig as getBackgroundElGlobalConfig, setGlobalConfig as setBackgroundElGlobalConfig} from './background_el.js';
-import {Cloud} from './cloud.js';
-import type {Dimensions} from './dimensions.js';
-import {HorizonLine} from './horizon_line.js';
-import {NightMode} from './night_mode.js';
-import {Obstacle, setMaxGapCoefficient as setMaxObstacleGapCoefficient, setMaxObstacleLength} from './obstacle.js';
-import {Runner} from './offline.js';
-import type {ObstacleType, SpritePositions} from './offline_sprite_definitions.js';
-import {spriteDefinitionByType} from './offline_sprite_definitions.js';
-import {getRandomNum} from './utils.js';
+import {BackgroundEl, getGlobalConfig as getBackgroundElGlobalConfig, setGlobalConfig as setBackgroundElGlobalConfig} from './background_el';
+import {Cloud} from './cloud';
+import type {Dimensions} from './dimensions';
+import {HorizonLine} from './horizon_line';
+import {NightMode} from './night_mode';
+import {Obstacle, setMaxGapCoefficient as setMaxObstacleGapCoefficient, setMaxObstacleLength} from './obstacle';
+import {Runner} from './offline';
+import type {ObstacleType, SpritePositions} from './offline_sprite_definitions';
+import {spriteDefinitionByType} from './offline_sprite_definitions';
+import {getRandomNum} from './utils';
 
 /**
  * Horizon background class.
@@ -50,7 +50,7 @@ export class Horizon {
     this.canvas = canvas;
     const canvasContext = canvas.getContext('2d');
     assert(canvasContext);
-    this.canvasCtx = canvasContext;
+    this.canvasCtx = canvasContext!;
     this.dimensions = dimensions;
     this.gapCoefficient = gapCoefficient;
     this.cloudFrequency = this.config.CLOUD_FREQUENCY;

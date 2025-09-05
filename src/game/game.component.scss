@@ -1,0 +1,64 @@
+:host {
+  display: block;
+  position: relative;
+}
+
+#gameContainer {
+  display: block;
+  height: min-content;
+  border: 2px solid transparent;
+  border-radius: 3px;
+
+  @keyframes flashBorder {
+    0% {
+      border-color: transparent;
+    }
+    50% {
+      border-color: #b66;
+    }
+    100% {
+      border-color: transparent;
+    }
+  }
+
+  &.flash {
+    animation: flashBorder 250ms linear infinite;
+  }
+}
+
+.fog {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  transition: width 1s ease-out;
+  //background: linear-gradient(to right, #7770, #777 10px);
+
+  .cloud {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url('/clouds.png');
+    background-size: auto 100%;
+    background-repeat: no-repeat;
+    background-position: left top;
+
+    --cloud-offset: 0.75in;
+    animation: clouds 1000ms linear infinite;
+
+    @keyframes clouds {
+      25% { translate: 1px 1px; }
+      50% { translate: 2px 0px; }
+      75% { translate: 1px -1px; }
+    }
+
+    @for $n from 0 to 5 {
+      &:nth-child(#{$n + 1}) {
+        left: calc($n * var(--cloud-offset));
+        animation-delay: calc($n * 150ms);
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {IS_IOS} from './constants.js';
+import {IS_IOS} from './constants';
 
 
 export function getRandomNum(min: number, max: number): number {

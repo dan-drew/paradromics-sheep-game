@@ -1,14 +1,15 @@
+// @ts-nocheck
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
+import {assert} from './assert';
 
-import {DEFAULT_DIMENSIONS, FPS, IS_HIDPI} from './constants.js';
-import {Runner} from './offline.js';
-import {CollisionBox} from './offline_sprite_definitions.js';
-import type {SpritePosition} from './sprite_position.js';
-import {getTimeStamp} from './utils.js';
+import {DEFAULT_DIMENSIONS, FPS, IS_HIDPI} from './constants';
+import {Runner} from './offline';
+import {CollisionBox} from './offline_sprite_definitions';
+import type {SpritePosition} from './sprite_position';
+import {getTimeStamp} from './utils';
 
 
 interface BaseTrexConfig {

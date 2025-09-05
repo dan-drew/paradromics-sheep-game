@@ -1,23 +1,26 @@
+// @ts-nocheck
 // Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import {assert} from './assert';
+import {loadTimeData} from './loadTimeData';
 
-import {HIDDEN_CLASS} from '../constants.js';
+import {DEFAULT_DIMENSIONS, FPS, IS_HIDPI, IS_IOS, IS_MOBILE, IS_RTL} from './constants';
+import type {Dimensions} from './dimensions';
+import {DistanceMeter} from './distance_meter';
+import {GameOverPanel} from './game_over_panel';
+import {GeneratedSoundFx} from './generated_sound_fx';
+import {Horizon} from './horizon';
+import type {Obstacle} from './obstacle';
+import type {SpriteDefinition, SpriteDefinitionByType, SpritePositions} from './offline_sprite_definitions';
+import {CollisionBox, GAME_TYPE, spriteDefinitionByType} from './offline_sprite_definitions';
+import {Status as TrexStatus, Trex} from './trex';
+import {getTimeStamp} from './utils';
 
-import {DEFAULT_DIMENSIONS, FPS, IS_HIDPI, IS_IOS, IS_MOBILE, IS_RTL} from './constants.js';
-import type {Dimensions} from './dimensions.js';
-import {DistanceMeter} from './distance_meter.js';
-import {GameOverPanel} from './game_over_panel.js';
-import {GeneratedSoundFx} from './generated_sound_fx.js';
-import {Horizon} from './horizon.js';
-import type {Obstacle} from './obstacle.js';
-import type {SpriteDefinition, SpriteDefinitionByType, SpritePositions} from './offline_sprite_definitions.js';
-import {CollisionBox, GAME_TYPE, spriteDefinitionByType} from './offline_sprite_definitions.js';
-import {Status as TrexStatus, Trex} from './trex.js';
-import {getTimeStamp} from './utils.js';
+const HIDDEN_CLASS = 'hidden'
+
+type GameEventType = 'game-error' | 'game-playing' | 'game-stopped'
 
 enum A11yStrings {
   ARIA_LABEL = 'dinoGameA11yAriaLabel',
@@ -34,7 +37,7 @@ enum A11yStrings {
  * Shared config for all versions of the game. Additional parameters are
  * defined in GameModeConfig.
  */
-interface BaseConfig {
+export interface BaseConfig {
   audiocueProximityThreshold: number;
   audiocueProximityThresholdMobileA11y: number;
   bgCloudSpeed: number;
@@ -59,7 +62,7 @@ interface BaseConfig {
   arcadeModeTopPositionPercent: number;
 }
 
-interface GameModeConfig {
+export interface GameModeConfig {
   acceleration: number;
   audiocueProximityThreshold: number;
   audiocueProximityThresholdMobileA11y: number;
@@ -68,9 +71,13 @@ interface GameModeConfig {
   maxSpeed: number;
   mobileSpeedCoefficient: number;
   speed: number;
+  actionLatency: number;
+  maxActionLatency: number;
+  errorRate: number;
+  fogDisabled?: boolean
 }
 
-const defaultBaseConfig: BaseConfig = {
+export const defaultBaseConfig: BaseConfig = {
   audiocueProximityThreshold: 190,
   audiocueProximityThresholdMobileA11y: 250,
   bgCloudSpeed: 0.2,
@@ -95,7 +102,7 @@ const defaultBaseConfig: BaseConfig = {
   arcadeModeTopPositionPercent: 0.1,
 };
 
-const normalModeConfig: GameModeConfig = {
+export const normalModeConfig: GameModeConfig = {
   acceleration: 0.001,
   audiocueProximityThreshold: 190,
   audiocueProximityThresholdMobileA11y: 250,
@@ -104,6 +111,9 @@ const normalModeConfig: GameModeConfig = {
   maxSpeed: 13,
   mobileSpeedCoefficient: 1.2,
   speed: 6,
+  actionLatency: 0,
+  maxActionLatency: 500,
+  errorRate: 0,
 };
 
 const slowModeConfig: GameModeConfig = {
@@ -115,11 +125,14 @@ const slowModeConfig: GameModeConfig = {
   maxSpeed: 9,
   mobileSpeedCoefficient: 1.5,
   speed: 4.2,
+  actionLatency: 0,
+  maxActionLatency: 500,
+  errorRate: 0,
 };
 
-type Config = BaseConfig&GameModeConfig;
-type TrexDebugConfigSetting = 'gravity'|'minJumpHeight'|'speedDropCoefficient'|
-    'initialJumpVelocity'|'speed';
+export type Config = BaseConfig & GameModeConfig;
+type TrexDebugConfigSetting = 'gravity' | 'minJumpHeight' | 'speedDropCoefficient' |
+  'initialJumpVelocity' | 'speed';
 
 /**
  * CSS class names.
@@ -149,10 +162,10 @@ enum RunnerSounds {
 /**
  * Key code mapping.
  */
-const runnerKeycodes: {jump: number[], duck: number[], restart: number[]} = {
-  jump: [38, 32],  // Up, spacebar
-  duck: [40],      // Down
-  restart: [13],   // Enter
+const runnerKeycodes: { jump: string[], duck: string[], restart: string[] } = {
+  jump: ['ArrowUp', 'Space'],  // Up, spacebar
+  duck: ['ArrowDown'],      // Down
+  restart: ['Enter'],   // Enter
 };
 
 enum RunnerEvents {
@@ -172,7 +185,7 @@ enum RunnerEvents {
   GAMEPADCONNECTED = 'gamepadconnected',
 }
 
-let runnerInstance: Runner|null = null;
+let runnerInstance: Runner | null = null;
 
 const ARCADE_MODE_URL: string = 'chrome://dino/';
 
@@ -183,38 +196,38 @@ const RESOURCE_POSTFIX: string = 'offline-resources-';
  */
 export class Runner {
   private outerContainerEl: HTMLElement;
-  private containerEl: HTMLElement|null = null;
+  private containerEl: HTMLElement | null = null;
   // A div to intercept touch events. Only set while (playing && useTouch).
-  private touchController: HTMLElement|null = null;
-  private canvas: HTMLCanvasElement|null = null;
-  private canvasCtx: CanvasRenderingContext2D|null = null;
-  private a11yStatusEl: HTMLElement|null = null;
-  private slowSpeedCheckboxLabel: HTMLElement|null = null;
-  private slowSpeedCheckbox: HTMLInputElement|null = null;
-  private slowSpeedToggleEl: HTMLElement|null = null;
-  private origImageSprite: HTMLImageElement|null = null;
-  private altCommonImageSprite: HTMLImageElement|null = null;
-  private altGameImageSprite: HTMLImageElement|null = null;
-  private imageSprite: HTMLImageElement|null = null;
+  private touchController: HTMLElement | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private canvasCtx: CanvasRenderingContext2D | null = null;
+  private a11yStatusEl: HTMLElement | null = null;
+  private slowSpeedCheckboxLabel: HTMLElement | null = null;
+  private slowSpeedCheckbox: HTMLInputElement | null = null;
+  private slowSpeedToggleEl: HTMLElement | null = null;
+  private origImageSprite: HTMLImageElement | null = null;
+  private altCommonImageSprite: HTMLImageElement | null = null;
+  private altGameImageSprite: HTMLImageElement | null = null;
+  private imageSprite: HTMLImageElement | null = null;
 
   private config: Config;
   // Logical dimensions of the container.
   private dimensions: Dimensions = DEFAULT_DIMENSIONS;
-  private gameType: (keyof SpriteDefinitionByType|null) = null;
+  private gameType: (keyof SpriteDefinitionByType | null) = null;
   private spriteDefinition: SpriteDefinition = spriteDefinitionByType.original;
-  private spriteDef: SpritePositions|null = null;
+  private spriteDef: SpritePositions | null = null;
 
   // Alt game mode state.
   private altGameModeActive: boolean = false;
-  private altGameModeFlashTimer: number|null = null;
+  private altGameModeFlashTimer: number | null = null;
   private altGameAssetsFailedToLoad: boolean = false;
   private fadeInTimer: number = 0;
 
   // UI components.
-  private tRex: Trex|null = null;
-  private distanceMeter: DistanceMeter|null = null;
-  private gameOverPanel: GameOverPanel|null = null;
-  private horizon: Horizon|null = null;
+  private tRex: Trex | null = null;
+  private distanceMeter: DistanceMeter | null = null;
+  private gameOverPanel: GameOverPanel | null = null;
+  private horizon: Horizon | null = null;
 
   private msPerFrame: number = 1000 / FPS;
   private time: number = 0;
@@ -247,15 +260,16 @@ export class Runner {
   private invertTrigger: boolean = false;
 
   private soundFx:
-      Partial<{[K in keyof typeof RunnerSounds]: AudioBuffer}> = {};
-  private audioContext: AudioContext|null = null;
-  private generatedSoundFx: GeneratedSoundFx|null = null;
+    Partial<{ [K in keyof typeof RunnerSounds]: AudioBuffer }> = {};
+  private audioContext: AudioContext | null = null;
+  private generatedSoundFx: GeneratedSoundFx | null = null;
 
   // Gamepad state.
   private pollingGamepads: boolean = false;
   private gamepadIndex?: number;
-  private previousGamepad: Gamepad|null = null;
+  private previousGamepad: Gamepad | null = null;
 
+  private latencyTimeout: number = -1
 
   // Initialize the singleton instance of Runner. Should only be called once.
   static initializeInstance(outerContainerId: string, config?: Config): Runner {
@@ -273,12 +287,12 @@ export class Runner {
 
   private constructor(outerContainerId: string, configParam?: Config) {
     const outerContainerElement =
-        document.querySelector<HTMLElement>(outerContainerId);
+      document.querySelector<HTMLElement>(outerContainerId);
     assert(outerContainerElement);
     this.outerContainerEl = outerContainerElement;
 
     this.config =
-        configParam || Object.assign({}, defaultBaseConfig, normalModeConfig);
+      configParam || Object.assign({}, defaultBaseConfig, normalModeConfig);
 
     this.currentSpeed = this.config.speed;
 
@@ -333,16 +347,70 @@ export class Runner {
     return this.imageSprite;
   }
 
-  getRunnerAltGameImageSprite(): HTMLImageElement|null {
+  getRunnerAltGameImageSprite(): HTMLImageElement | null {
     return this.altGameImageSprite;
   }
 
-  getAltCommonImageSprite(): HTMLImageElement|null {
+  getAltCommonImageSprite(): HTMLImageElement | null {
     return this.altCommonImageSprite;
   }
 
   getConfig(): Config {
     return this.config;
+  }
+
+  private deferEventIfLatency(conditions: boolean = true, callback: () => void): void {
+    this.cancelLatency()
+    if (conditions && this.config.actionLatency > 0) {
+      this.latencyTimeout = setTimeout(() => {
+        this.latencyTimeout = -1
+        callback()
+      }, this.config.actionLatency)
+    } else {
+      callback()
+    }
+  }
+
+  private cancelLatency(): void {
+    if (this.latencyTimeout >= 0) {
+      clearTimeout(this.latencyTimeout);
+      this.latencyTimeout = -1
+    }
+  }
+
+  /**
+   * Optionally, apply forced error logic and either pass the event on or
+   * cause an "error" by changing the resulting action or dropping it.
+   * @param event Event to handler
+   * @param handler Handler to call
+   * @private
+   */
+  private handleActionEvent(event: Event, handler: (Event) => void): void {
+    if (
+      this.playing && !this.crashed && !this.paused
+      && !('gameError' in event)
+      && this.config.errorRate > 0
+      && (Math.random() * 100 <= this.config.errorRate)
+    ) {
+      // 50/50 chance of reversing the action or dropping it
+      if (Math.random() >= 0.5) {
+        // This will dispatch a new event in the event chain and drop the current one
+        console.info('Sheep: Reversing!')
+        this.reverseEvent(event)
+      } else {
+        console.info('Sheep: User action ignored!')
+      }
+
+      this.reportEvent('game-error')
+    } else {
+      // Pass on as-is
+      handler(event);
+    }
+  }
+
+  private reportEvent(eventType: GameEventType) {
+    console.debug(`Reporting game event: ${eventType}`);
+    this.outerContainerEl.dispatchEvent(new CustomEvent(eventType, { bubbles: true, cancelable: true }));
   }
 
   /**
@@ -352,7 +420,7 @@ export class Runner {
     assert(loadTimeData.valueExists('altGameType'));
     if (GAME_TYPE.length > 0) {
       const parsedValue =
-          Number.parseInt(loadTimeData.getValue('altGameType'), 10);
+        Number.parseInt(loadTimeData.getValue('altGameType'), 10);
       const type = GAME_TYPE[parsedValue - 1];
       this.gameType = type || null;
     }
@@ -369,7 +437,7 @@ export class Runner {
 
     // Show notification when the activation key is pressed.
     document.addEventListener(RunnerEvents.KEYDOWN, e => {
-      if (runnerKeycodes.jump.includes(e.keyCode)) {
+      if (this.isJumpEvent(e)) {
         assert(this.containerEl);
         this.containerEl.classList.add(RunnerClasses.SNACKBAR_SHOW);
         const iconElement = document.querySelector('.icon');
@@ -414,10 +482,10 @@ export class Runner {
    * @param resourceName Name in data object,
    * @return The created element.
    */
-  private createImageElement(resourceName: string): HTMLImageElement|null {
+  private createImageElement(resourceName: string): HTMLImageElement | null {
     const imgSrc = loadTimeData.valueExists(resourceName) ?
-        loadTimeData.getString(resourceName) :
-        null;
+      loadTimeData.getString(resourceName) :
+      null;
 
     if (imgSrc) {
       const el = document.createElement('img');
@@ -444,21 +512,21 @@ export class Runner {
     }
 
     const imageSpriteElement = document.querySelector<HTMLImageElement>(
-        `#${RESOURCE_POSTFIX + scale}`);
+      `#${RESOURCE_POSTFIX + scale}`);
     assert(imageSpriteElement);
     this.imageSprite = imageSpriteElement;
 
     if (this.gameType) {
       this.altGameImageSprite =
-          (this.createImageElement('altGameSpecificImage' + scale));
+        (this.createImageElement('altGameSpecificImage' + scale));
       this.altCommonImageSprite =
-          (this.createImageElement('altGameCommonImage' + scale));
+        (this.createImageElement('altGameCommonImage' + scale));
     }
     this.origImageSprite = this.getRunnerImageSprite();
 
     // Disable the alt game mode if the sprites can't be loaded.
     if (!this.getRunnerAltGameImageSprite() === null ||
-        this.getAltCommonImageSprite() === null) {
+      this.getAltCommonImageSprite() === null) {
       this.altGameAssetsFailedToLoad = true;
       this.altGameModeActive = false;
     }
@@ -468,7 +536,7 @@ export class Runner {
     } else {
       // If the images are not yet loaded, add a listener.
       this.getRunnerImageSprite().addEventListener(
-          RunnerEvents.LOAD, this.init.bind(this));
+        RunnerEvents.LOAD, this.init.bind(this));
     }
   }
 
@@ -476,22 +544,23 @@ export class Runner {
    * Load and decode base 64 encoded sounds.
    */
   private loadSounds() {
+    return; // DDREW TODO
     if (IS_IOS) {
       return;
     }
     this.audioContext = new AudioContext();
 
     const resourceTemplateElement = document.querySelector<HTMLTemplateElement>(
-        `#${this.config.resourceTemplateId}`);
+      `#${this.config.resourceTemplateId}`);
     assert(resourceTemplateElement);
     const resourceTemplate = resourceTemplateElement.content;
 
     for (const sound in RunnerSounds) {
       const audioElement = resourceTemplate.querySelector<HTMLAudioElement>(
-          `#${RunnerSounds[sound as keyof typeof RunnerSounds]}`);
+        `#${RunnerSounds[sound as keyof typeof RunnerSounds]}`);
       assert(audioElement);
       let soundSrc = audioElement.src;
-      soundSrc = soundSrc.substr(soundSrc.indexOf(',') + 1);
+      soundSrc = soundSrc.substring(soundSrc.indexOf(',') + 1);
       const buffer = decodeBase64ToArrayBuffer(soundSrc);
 
       // Async, so no guarantee of order in array.
@@ -513,8 +582,8 @@ export class Runner {
     // Reduce the speed on smaller mobile screens.
     if (this.dimensions.width < DEFAULT_DIMENSIONS.width) {
       const mobileSpeed = this.hasSlowdown ? speed :
-                                             speed * this.dimensions.width /
-              DEFAULT_DIMENSIONS.width * this.config.mobileSpeedCoefficient;
+        speed * this.dimensions.width /
+        DEFAULT_DIMENSIONS.width * this.config.mobileSpeedCoefficient;
       this.currentSpeed = mobileSpeed > speed ? speed : mobileSpeed;
     } else if (newSpeed) {
       this.currentSpeed = newSpeed;
@@ -527,7 +596,7 @@ export class Runner {
   private init() {
     assert(this.spriteDef);
     const iconElement =
-        document.querySelector<HTMLElement>('.' + RunnerClasses.ICON);
+      document.querySelector<HTMLElement>('.' + RunnerClasses.ICON);
     assert(iconElement);
 
     // Hide the static icon.
@@ -535,7 +604,7 @@ export class Runner {
 
     if (this.isArcadeMode()) {
       document.title =
-          document.title + ' - ' + getA11yString(A11yStrings.ARIA_LABEL);
+        document.title + ' - ' + getA11yString(A11yStrings.ARIA_LABEL);
     }
 
     this.adjustDimensions();
@@ -546,14 +615,14 @@ export class Runner {
     this.containerEl.setAttribute('role', IS_MOBILE ? 'button' : 'application');
     this.containerEl.setAttribute('tabindex', '0');
     this.containerEl.setAttribute(
-        'title', getA11yString(A11yStrings.DESCRIPTION));
+      'title', getA11yString(A11yStrings.DESCRIPTION));
     this.containerEl.setAttribute('aria-label', ariaLabel);
 
     this.containerEl.className = RunnerClasses.CONTAINER;
 
     // Player canvas container.
     this.canvas = createCanvas(
-        this.containerEl, this.dimensions.width, this.dimensions.height);
+      this.containerEl, this.dimensions.width, this.dimensions.height);
 
     // Live region for game status updates.
     this.a11yStatusEl = document.createElement('span');
@@ -565,12 +634,12 @@ export class Runner {
     this.slowSpeedCheckboxLabel = document.createElement('label');
     this.slowSpeedCheckboxLabel.className = 'slow-speed-option hidden';
     this.slowSpeedCheckboxLabel.textContent =
-        getA11yString(A11yStrings.SPEED_LABEL);
+      getA11yString(A11yStrings.SPEED_LABEL);
 
     this.slowSpeedCheckbox = document.createElement('input');
     this.slowSpeedCheckbox.setAttribute('type', 'checkbox');
     this.slowSpeedCheckbox.setAttribute(
-        'title', getA11yString(A11yStrings.SPEED_LABEL));
+      'title', getA11yString(A11yStrings.SPEED_LABEL));
     this.slowSpeedCheckbox.setAttribute('tabindex', '0');
     this.slowSpeedCheckbox.setAttribute('checked', 'checked');
 
@@ -595,12 +664,12 @@ export class Runner {
 
     // Horizon contains clouds, obstacles and the ground.
     this.horizon = new Horizon(
-        this.canvas, this.spriteDef, this.dimensions,
-        this.config.gapCoefficient);
+      this.canvas, this.spriteDef, this.dimensions,
+      this.config.gapCoefficient);
 
     // Distance meter
     this.distanceMeter = new DistanceMeter(
-        this.canvas, this.spriteDef.textSprite, this.dimensions.width);
+      this.canvas, this.spriteDef.textSprite, this.dimensions.width);
 
     // Draw t-rex
     this.tRex = new Trex(this.canvas, this.spriteDef.tRex);
@@ -612,11 +681,11 @@ export class Runner {
     this.update();
 
     window.addEventListener(
-        RunnerEvents.RESIZE, this.debounceResize.bind(this));
+      RunnerEvents.RESIZE, this.debounceResize.bind(this));
 
     // Handle dark mode
     const darkModeMediaQuery =
-        window.matchMedia('(prefers-color-scheme: dark)');
+      window.matchMedia('(prefers-color-scheme: dark)');
     this.isDarkMode = darkModeMediaQuery && darkModeMediaQuery.matches;
     darkModeMediaQuery.addListener((e) => {
       this.isDarkMode = e.matches;
@@ -652,12 +721,12 @@ export class Runner {
 
     const boxStyles = window.getComputedStyle(this.outerContainerEl);
     const padding = Number(
-        boxStyles.paddingLeft.substr(0, boxStyles.paddingLeft.length - 2));
+      boxStyles.paddingLeft.substr(0, boxStyles.paddingLeft.length - 2));
 
     this.dimensions.width = this.outerContainerEl.offsetWidth - padding * 2;
     if (this.isArcadeMode()) {
       this.dimensions.width =
-          Math.min(DEFAULT_DIMENSIONS.width, this.dimensions.width);
+        Math.min(DEFAULT_DIMENSIONS.width, this.dimensions.width);
       if (this.activated) {
         this.setArcadeModeContainerScale();
       }
@@ -709,22 +778,23 @@ export class Runner {
       this.tRex.playingIntro = true;
 
       // CSS animation definition.
-      const keyframes = '@-webkit-keyframes intro { ' +
-          'from { width:' + this.tRex.config.width + 'px }' +
-          'to { width: ' + this.dimensions.width + 'px }' +
-          '}';
+      const keyframes = '@keyframes intro { ' +
+        'from { width:' + this.tRex.config.width + 'px }' +
+        'to { width: ' + this.dimensions.width + 'px }' +
+        '}';
       const styleSheet = document.styleSheets[0];
       assert(styleSheet);
-      styleSheet.insertRule(keyframes, 0);
-
-      this.containerEl.addEventListener(
-          RunnerEvents.ANIM_END, this.startGame.bind(this));
-
-      this.containerEl.style.webkitAnimation = 'intro .4s ease-out 1 both';
+      // styleSheet.insertRule(keyframes, 0);
+      //
+      // this.containerEl.addEventListener(
+      //     RunnerEvents.ANIM_END, this.startGame.bind(this));
+      //
+      // this.containerEl.style.webkitAnimation = 'intro .4s ease-out 1 both';
       this.containerEl.style.width = this.dimensions.width + 'px';
 
       this.setPlayStatus(true);
       this.activated = true;
+      this.startGame()
     } else if (this.crashed) {
       this.restart();
     }
@@ -754,19 +824,19 @@ export class Runner {
 
     // Handle tabbing off the page. Pause the current game.
     document.addEventListener(
-        RunnerEvents.VISIBILITY, this.onVisibilityChange.bind(this));
+      RunnerEvents.VISIBILITY, this.onVisibilityChange.bind(this));
 
     window.addEventListener(
-        RunnerEvents.BLUR, this.onVisibilityChange.bind(this));
+      RunnerEvents.BLUR, this.onVisibilityChange.bind(this));
 
     window.addEventListener(
-        RunnerEvents.FOCUS, this.onVisibilityChange.bind(this));
+      RunnerEvents.FOCUS, this.onVisibilityChange.bind(this));
   }
 
   private clearCanvas() {
     assert(this.canvasCtx);
     this.canvasCtx.clearRect(
-        0, 0, this.dimensions.width, this.dimensions.height);
+      0, 0, this.dimensions.width, this.dimensions.height);
   }
 
   /**
@@ -776,7 +846,7 @@ export class Runner {
   private isCanvasInView(): boolean {
     assert(this.containerEl);
     return this.containerEl.getBoundingClientRect().top >
-        this.config.canvasInViewOffset;
+      this.config.canvasInViewOffset;
   }
 
   /**
@@ -838,7 +908,7 @@ export class Runner {
 
       // Additional fade in - Prevents jump when switching sprites
       if (this.altGameModeActive &&
-          this.fadeInTimer <= this.config.fadeDuration) {
+        this.fadeInTimer <= this.config.fadeDuration) {
         this.fadeInTimer += deltaTime / 1000;
         this.canvasCtx.globalAlpha = this.fadeInTimer;
       } else {
@@ -860,19 +930,19 @@ export class Runner {
       // The horizon doesn't move until the intro is over.
       if (this.playingIntro) {
         this.horizon.update(
-            0, this.currentSpeed, hasObstacles, /* showNightMode = */ false);
+          0, this.currentSpeed, hasObstacles, /* showNightMode = */ false);
       } else if (!this.crashed) {
         const showNightMode = this.isDarkMode !== this.inverted;
         deltaTime = !this.activated ? 0 : deltaTime;
         this.horizon.update(
-            deltaTime, this.currentSpeed, hasObstacles, showNightMode);
+          deltaTime, this.currentSpeed, hasObstacles, showNightMode);
       }
 
       const firstObstacle = this.horizon.obstacles[0];
 
       // Check for collisions.
       let collision = hasObstacles && firstObstacle &&
-          this.checkForCollision(firstObstacle, this.tRex);
+        this.checkForCollision(firstObstacle, this.tRex);
 
       // For a11y, audio cues.
       if (this.hasAudioCuesInternal && hasObstacles) {
@@ -882,7 +952,7 @@ export class Runner {
         if (!firstObstacle.jumpAlerted) {
           const threshold = this.config.audiocueProximityThreshold;
           const adjProximityThreshold = threshold +
-              (threshold * Math.log10(this.currentSpeed / this.config.speed));
+            (threshold * Math.log10(this.currentSpeed / this.config.speed));
 
           if (firstObstacle.xPos < adjProximityThreshold) {
             if (jumpObstacle) {
@@ -895,7 +965,7 @@ export class Runner {
 
       // Activated alt game mode.
       if (this.isAltGameModeEnabled() && collision && firstObstacle &&
-          firstObstacle.typeConfig.type === 'collectable') {
+        firstObstacle.typeConfig.type === 'collectable') {
         this.horizon.removeFirstObstacle();
         this.tRex.setFlashing(true);
         collision = false;
@@ -917,7 +987,7 @@ export class Runner {
       }
 
       const playAchievementSound =
-          this.distanceMeter.update(deltaTime, Math.ceil(this.distanceRan));
+        this.distanceMeter.update(deltaTime, Math.ceil(this.distanceRan));
 
       if (!this.hasAudioCuesInternal && playAchievementSound) {
         this.playSound(this.soundFx.SCORE);
@@ -933,7 +1003,7 @@ export class Runner {
           this.invertTimer += deltaTime;
         } else {
           const actualDistance =
-              this.distanceMeter.getActualDistance(Math.ceil(this.distanceRan));
+            this.distanceMeter.getActualDistance(Math.ceil(this.distanceRan));
 
           if (actualDistance > 0) {
             this.invertTrigger = !(actualDistance % this.config.invertDistance);
@@ -948,13 +1018,17 @@ export class Runner {
     }
 
     if (this.playing ||
-        (!this.activated && this.tRex.blinkCount < this.config.maxBlinkCount)) {
+      (!this.activated && this.tRex.blinkCount < this.config.maxBlinkCount)) {
       this.tRex.update(deltaTime);
       this.scheduleNextUpdate();
     }
   }
 
   handleEvent(e: Event) {
+    if (e.gameError) {
+      console.debug('Got error event!', e)
+    }
+
     switch (e.type) {
       case RunnerEvents.KEYDOWN:
       case RunnerEvents.TOUCHSTART:
@@ -982,8 +1056,7 @@ export class Runner {
       this.hasAudioCuesInternal = true;
       this.generatedSoundFx = new GeneratedSoundFx();
       this.config.clearTime *= 1.2;
-    } else if (
-        e instanceof KeyboardEvent && runnerKeycodes.jump.includes(e.keyCode)) {
+    } else if (this.isJumpEvent(e)) {
       this.onKeyDown(e);
     }
   }
@@ -1010,7 +1083,7 @@ export class Runner {
         assert(this.tRex);
         this.hasSlowdownInternal = this.slowSpeedCheckbox.checked;
         const updatedConfig =
-            this.hasSlowdown ? slowModeConfig : normalModeConfig;
+          this.hasSlowdown ? slowModeConfig : normalModeConfig;
 
         this.config = Object.assign(defaultBaseConfig, updatedConfig);
         this.currentSpeed = updatedConfig.speed;
@@ -1032,7 +1105,7 @@ export class Runner {
     if (this.hasAudioCuesInternal || isFocusEvent) {
       assert(this.slowSpeedCheckboxLabel);
       this.slowSpeedCheckboxLabel.classList.toggle(
-          HIDDEN_CLASS, isFocusEvent ? false : !this.crashed);
+        HIDDEN_CLASS, isFocusEvent ? false : !this.crashed);
     }
   }
 
@@ -1056,15 +1129,15 @@ export class Runner {
     assert(this.canvas);
     // A11y keyboard / screen reader activation.
     this.containerEl.addEventListener(
-        RunnerEvents.KEYDOWN, this.handleCanvasKeyPress.bind(this));
+      RunnerEvents.KEYDOWN, this.handleCanvasKeyPress.bind(this));
     if (!IS_MOBILE) {
       this.containerEl.addEventListener(
-          RunnerEvents.FOCUS, this.showSpeedToggle.bind(this));
+        RunnerEvents.FOCUS, this.showSpeedToggle.bind(this));
     }
     this.canvas.addEventListener(
-        RunnerEvents.KEYDOWN, this.preventScrolling.bind(this));
+      RunnerEvents.KEYDOWN, this.preventScrolling.bind(this));
     this.canvas.addEventListener(
-        RunnerEvents.KEYUP, this.preventScrolling.bind(this));
+      RunnerEvents.KEYUP, this.preventScrolling.bind(this));
 
     // Keys.
     document.addEventListener(RunnerEvents.KEYDOWN, this);
@@ -1081,6 +1154,57 @@ export class Runner {
     }
   }
 
+  private isMobileMouseInput(e: Event): boolean {
+    if (!('mobileMouseInput' in e)) {
+      e.mobileMouseInput = (
+        IS_MOBILE
+        && e instanceof PointerEvent
+        && e.type === RunnerEvents.POINTERDOWN
+        && e.pointerType === 'mouse'
+        && (
+          e.target === this.containerEl
+          || (
+            IS_IOS
+            && (e.target === this.touchController || e.target === this.canvas)
+          )
+        )
+      )
+    }
+
+    return e.mobileMouseInput
+  }
+
+  private isJumpEvent(e: Event): boolean {
+    return e instanceof KeyboardEvent && runnerKeycodes.jump.includes(e.code)
+  }
+
+  private isDuckEvent(e: Event): boolean {
+    return e instanceof KeyboardEvent && runnerKeycodes.duck.includes(e.code)
+  }
+
+  /**
+   * Generate a new event that is the reverse of the current one
+   * @param e Source event
+   * @private
+   */
+  private reverseEvent(e: Event): KeyboardEvent {
+    const init: KeyboardEventInit = { bubbles: true, cancelable: true };
+
+    e.stopImmediatePropagation()
+    e.preventDefault()
+
+    if (this.isJumpEvent(e)) {
+      init.code = runnerKeycodes.duck[0]
+    } else {
+      init.code = runnerKeycodes.jump[0]
+    }
+
+    const newEvent = new KeyboardEvent(e.type, init)
+    newEvent.gameError = true
+    e.currentTarget!.dispatchEvent(newEvent)
+    console.info('Sheep: User action reversed', e, newEvent)
+  }
+
   /**
    * Process keydown.
    */
@@ -1092,63 +1216,68 @@ export class Runner {
 
     if (this.isCanvasInView()) {
       // Allow toggling of speed toggle.
-      if (e instanceof KeyboardEvent &&
-          runnerKeycodes.jump.includes(e.keyCode) &&
-          e.target === this.slowSpeedCheckbox) {
+      if (this.isJumpEvent(e) && e.target === this.slowSpeedCheckbox) {
         return;
       }
 
       if (!this.crashed && !this.paused) {
         // For a11y, screen reader activation.
-        const isMobileMouseInput = IS_MOBILE && e instanceof PointerEvent &&
-            e.type === RunnerEvents.POINTERDOWN && e.pointerType === 'mouse' &&
-            (e.target === this.containerEl ||
-             (IS_IOS &&
-              (e.target === this.touchController || e.target === this.canvas)));
+        // const isMobileMouseInput = IS_MOBILE && e instanceof PointerEvent &&
+        //   e.type === RunnerEvents.POINTERDOWN && e.pointerType === 'mouse' &&
+        //   (e.target === this.containerEl ||
+        //     (IS_IOS &&
+        //       (e.target === this.touchController || e.target === this.canvas)));
         assert(this.tRex);
 
-        if ((e instanceof KeyboardEvent &&
-             runnerKeycodes.jump.includes(e.keyCode)) ||
-            e.type === RunnerEvents.TOUCHSTART || isMobileMouseInput) {
-          e.preventDefault();
-          // Starting the game for the first time.
-          if (!this.playing) {
-            // Started by touch so create a touch controller.
-            if (!this.touchController && e.type === RunnerEvents.TOUCHSTART) {
-              this.createTouchController();
-            }
+        this.handleActionEvent(e, e => {
+          this.deferEventIfLatency(
+            this.playing,
+            () => {
+              if (
+                this.isJumpEvent(e)
+                || e.type === RunnerEvents.TOUCHSTART
+                || this.isMobileMouseInput(e)
+              ) {
+                e.preventDefault();
+                // Starting the game for the first time.
+                if (!this.playing) {
+                  // Started by touch so create a touch controller.
+                  if (!this.touchController && e.type === RunnerEvents.TOUCHSTART) {
+                    this.createTouchController();
+                  }
 
-            if (isMobileMouseInput) {
-              this.handleCanvasKeyPress(e);
+                  if (this.isMobileMouseInput(e)) {
+                    this.handleCanvasKeyPress(e);
+                  }
+                  this.loadSounds();
+                  this.setPlayStatus(true);
+                  this.update();
+                  if (window.errorPageController) {
+                    window.errorPageController.trackEasterEgg();
+                  }
+                }
+                // Start jump.
+                if (!this.tRex.jumping && !this.tRex.ducking) {
+                  if (this.hasAudioCuesInternal) {
+                    this.getGeneratedSoundFx().cancelFootSteps();
+                  } else {
+                    this.playSound(this.soundFx.BUTTON_PRESS);
+                  }
+                  this.tRex.startJump(this.currentSpeed);
+                }
+              } else if (this.playing && this.isDuckEvent(e)) {
+                e.preventDefault();
+                if (this.tRex.jumping) {
+                  // Speed drop, activated only when jump key is not pressed.
+                  this.tRex.setSpeedDrop();
+                } else if (!this.tRex.jumping && !this.tRex.ducking) {
+                  // Duck.
+                  this.tRex.setDuck(true);
+                }
+              }
             }
-            this.loadSounds();
-            this.setPlayStatus(true);
-            this.update();
-            if (window.errorPageController) {
-              window.errorPageController.trackEasterEgg();
-            }
-          }
-          // Start jump.
-          if (!this.tRex.jumping && !this.tRex.ducking) {
-            if (this.hasAudioCuesInternal) {
-              this.getGeneratedSoundFx().cancelFootSteps();
-            } else {
-              this.playSound(this.soundFx.BUTTON_PRESS);
-            }
-            this.tRex.startJump(this.currentSpeed);
-          }
-        } else if (
-            this.playing && e instanceof KeyboardEvent &&
-            runnerKeycodes.duck.includes(e.keyCode)) {
-          e.preventDefault();
-          if (this.tRex.jumping) {
-            // Speed drop, activated only when jump key is not pressed.
-            this.tRex.setSpeedDrop();
-          } else if (!this.tRex.jumping && !this.tRex.ducking) {
-            // Duck.
-            this.tRex.setDuck(true);
-          }
-        }
+          )
+        })
       }
     }
   }
@@ -1158,24 +1287,27 @@ export class Runner {
    */
   private onKeyUp(e: Event) {
     assert(this.tRex);
-    const keyCode = ('keyCode' in e) ? e.keyCode as number : 0;
-    const isjumpKey = runnerKeycodes.jump.includes(keyCode) ||
-        e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
+    const isjumpKey = this.isJumpEvent(e) || e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
 
     if (this.isRunning() && isjumpKey) {
       this.tRex.endJump();
-    } else if (runnerKeycodes.duck.includes(keyCode)) {
-      this.tRex.speedDrop = false;
-      this.tRex.setDuck(false);
+    } else if (this.isDuckEvent(e)) {
+      this.deferEventIfLatency(true, () => {
+        this.tRex.speedDrop = false;
+        this.tRex.setDuck(false);
+      })
     } else if (this.crashed) {
       // Check that enough time has elapsed before allowing jump key to restart.
       const deltaTime = getTimeStamp() - this.time;
 
-      if (this.isCanvasInView() &&
-          (runnerKeycodes.restart.includes(keyCode) ||
-           this.isLeftClickOnCanvas(e) ||
-           (deltaTime >= this.config.gameoverClearTime &&
-            runnerKeycodes.jump.includes(keyCode)))) {
+      if (
+        this.isCanvasInView() &&
+        (
+          runnerKeycodes.restart.includes(e['keyCode'] || '')
+          || this.isLeftClickOnCanvas(e)
+          || (deltaTime >= this.config.gameoverClearTime && this.isJumpEvent(e))
+        )
+      ) {
         this.handleGameOverClicks(e);
       }
     } else if (this.paused && isjumpKey) {
@@ -1198,7 +1330,7 @@ export class Runner {
    * rAF loop for gamepad polling.
    */
   private pollGamepadState() {
-    const gamepads: Array<Gamepad|null> = navigator.getGamepads();
+    const gamepads: Array<Gamepad | null> = navigator.getGamepads();
     this.pollActiveGamepad(gamepads);
 
     this.pollingGamepads = true;
@@ -1209,10 +1341,10 @@ export class Runner {
    * Polls for a gamepad with the jump button pressed. If one is found this
    * becomes the "active" gamepad and all others are ignored.
    */
-  private pollForActiveGamepad(gamepads: Array<Gamepad|null>) {
+  private pollForActiveGamepad(gamepads: Array<Gamepad | null>) {
     for (const [i, gamepad] of gamepads.entries()) {
       if (gamepad && gamepad.buttons.length > 0 &&
-          gamepad.buttons[0]!.pressed) {
+        gamepad.buttons[0]!.pressed) {
         this.gamepadIndex = i;
         this.pollActiveGamepad(gamepads);
         return;
@@ -1224,7 +1356,7 @@ export class Runner {
    * Polls the chosen gamepad for button presses and generates KeyboardEvents
    * to integrate with the rest of the game logic.
    */
-  private pollActiveGamepad(gamepads: Array<Gamepad|null>) {
+  private pollActiveGamepad(gamepads: Array<Gamepad | null>) {
     if (this.gamepadIndex === undefined) {
       this.pollForActiveGamepad(gamepads);
       return;
@@ -1254,18 +1386,18 @@ export class Runner {
    * Generates a key event based on a gamepad button.
    */
   private pollGamepadButton(
-      gamepad: Gamepad, buttonIndex: number, keyCode: number) {
+    gamepad: Gamepad, buttonIndex: number, keyCode: number) {
     const state = gamepad.buttons[buttonIndex]?.pressed || false;
     let previousState = false;
     if (this.previousGamepad) {
       previousState =
-          this.previousGamepad.buttons[buttonIndex]?.pressed || false;
+        this.previousGamepad.buttons[buttonIndex]?.pressed || false;
     }
     // Generate key events on the rising and falling edge of a button press.
     if (state !== previousState) {
       const e = new KeyboardEvent(
-          state ? RunnerEvents.KEYDOWN : RunnerEvents.KEYUP,
-          {keyCode: keyCode});
+        state ? RunnerEvents.KEYDOWN : RunnerEvents.KEYUP,
+        {keyCode: keyCode});
       document.dispatchEvent(e);
     }
   }
@@ -1305,9 +1437,9 @@ export class Runner {
 
 
     return e.button != null && e.button < 2 &&
-        e.type === RunnerEvents.POINTERUP &&
-        (e.target === this.canvas ||
-         (IS_MOBILE && this.hasAudioCuesInternal &&
+      e.type === RunnerEvents.POINTERUP &&
+      (e.target === this.canvas ||
+        (IS_MOBILE && this.hasAudioCuesInternal &&
           e.target === this.containerEl));
   }
 
@@ -1384,18 +1516,18 @@ export class Runner {
     // Game over panel.
     if (!this.gameOverPanel) {
       const origSpriteDef = IS_HIDPI ? spriteDefinitionByType.original.hdpi :
-                                       spriteDefinitionByType.original.ldpi;
+        spriteDefinitionByType.original.ldpi;
 
       if (this.canvas) {
         if (this.isAltGameModeEnabled()) {
           this.gameOverPanel = new GameOverPanel(
-              this.canvas, origSpriteDef.textSprite, origSpriteDef.restart,
-              this.dimensions, origSpriteDef.altGameEnd,
-              this.altGameModeActive);
+            this.canvas, origSpriteDef.textSprite, origSpriteDef.restart,
+            this.dimensions, origSpriteDef.altGameEnd,
+            this.altGameModeActive);
         } else {
           this.gameOverPanel = new GameOverPanel(
-              this.canvas, origSpriteDef.textSprite, origSpriteDef.restart,
-              this.dimensions);
+            this.canvas, origSpriteDef.textSprite, origSpriteDef.restart,
+            this.dimensions);
         }
       }
     }
@@ -1415,20 +1547,20 @@ export class Runner {
       this.getGeneratedSoundFx().stopAll();
       assert(this.containerEl);
       this.announcePhrase(
-          getA11yString(A11yStrings.GAME_OVER)
-              .replace(
-                  '$1',
-                  this.distanceMeter.getActualDistance(this.distanceRan)
-                      .toString()) +
-          ' ' +
-          getA11yString(A11yStrings.HIGH_SCORE)
-              .replace(
-                  '$1',
+        getA11yString(A11yStrings.GAME_OVER)
+          .replace(
+            '$1',
+            this.distanceMeter.getActualDistance(this.distanceRan)
+              .toString()) +
+        ' ' +
+        getA11yString(A11yStrings.HIGH_SCORE)
+          .replace(
+            '$1',
 
-                  this.distanceMeter.getActualDistance(this.highestScore)
-                      .toString()));
+            this.distanceMeter.getActualDistance(this.highestScore)
+              .toString()));
       this.containerEl.setAttribute(
-          'title', getA11yString(A11yStrings.ARIA_LABEL));
+        'title', getA11yString(A11yStrings.ARIA_LABEL));
     }
     this.showSpeedToggle();
     this.disableSpeedToggle(false);
@@ -1438,6 +1570,7 @@ export class Runner {
     this.setPlayStatus(false);
     this.paused = true;
     cancelAnimationFrame(this.raqId);
+    this.cancelLatency()
     this.raqId = 0;
     if (this.hasAudioCuesInternal) {
       this.getGeneratedSoundFx().stopAll();
@@ -1496,6 +1629,8 @@ export class Runner {
       this.touchController.classList.toggle(HIDDEN_CLASS, !isPlaying);
     }
     this.playing = isPlaying;
+
+    this.reportEvent(isPlaying ? 'game-playing' : 'game-stopped');
   }
 
   /**
@@ -1505,7 +1640,7 @@ export class Runner {
     // In RTL languages the title is wrapped with the left to right mark
     // control characters &#x202A; and &#x202C but are invisible.
     return IS_RTL ? document.title.indexOf(ARCADE_MODE_URL) === 1 :
-                    document.title === ARCADE_MODE_URL;
+      document.title === ARCADE_MODE_URL;
   }
 
   /**
@@ -1529,15 +1664,15 @@ export class Runner {
     // Positions the game container at 10% of the available vertical window
     // height minus the game container height.
     const translateY = Math.ceil(Math.max(
-                           0,
-                           (windowHeight - scaledCanvasHeight -
-                            this.config.arcadeModeInitialTopPosition) *
-                               this.config.arcadeModeTopPositionPercent)) *
-        window.devicePixelRatio;
+        0,
+        (windowHeight - scaledCanvasHeight -
+          this.config.arcadeModeInitialTopPosition) *
+        this.config.arcadeModeTopPositionPercent)) *
+      window.devicePixelRatio;
 
     const cssScale = IS_RTL ? -scale + ',' + scale : scale;
     this.containerEl.style.transform =
-        'scale(' + cssScale + ') translateY(' + translateY + 'px)';
+      'scale(' + cssScale + ') translateY(' + translateY + 'px)';
   }
 
   /**
@@ -1545,7 +1680,7 @@ export class Runner {
    */
   private onVisibilityChange(e: Event) {
     if (document.hidden || e.type === 'blur' ||
-        document.visibilityState !== 'visible') {
+      document.visibilityState !== 'visible') {
       this.stop();
     } else if (!this.crashed) {
       assert(this.tRex);
@@ -1581,7 +1716,7 @@ export class Runner {
       this.inverted = false;
     } else {
       this.inverted =
-          htmlEl.classList.toggle(RunnerClasses.INVERTED, this.invertTrigger);
+        htmlEl.classList.toggle(RunnerClasses.INVERTED, this.invertTrigger);
     }
   }
 
@@ -1603,18 +1738,18 @@ export class Runner {
    * @param canvasCtx Optional canvas context for drawing collision boxes.
    */
   private checkForCollision(
-      obstacle: Obstacle, tRex: Trex,
-      canvasCtx?: CanvasRenderingContext2D): CollisionBox[]|null {
+    obstacle: Obstacle, tRex: Trex,
+    canvasCtx?: CanvasRenderingContext2D): CollisionBox[] | null {
     // Adjustments are made to the bounding box as there is a 1 pixel white
     // border around the t-rex and obstacles.
     const tRexBox = new CollisionBox(
-        tRex.xPos + 1, tRex.yPos + 1, tRex.config.width - 2,
-        tRex.config.height - 2);
+      tRex.xPos + 1, tRex.yPos + 1, tRex.config.width - 2,
+      tRex.config.height - 2);
 
     const obstacleBox = new CollisionBox(
-        obstacle.xPos + 1, obstacle.yPos + 1,
-        obstacle.typeConfig.width * obstacle.size - 2,
-        obstacle.typeConfig.height - 2);
+      obstacle.xPos + 1, obstacle.yPos + 1,
+      obstacle.typeConfig.width * obstacle.size - 2,
+      obstacle.typeConfig.height - 2);
 
     // Debug outer box
     if (canvasCtx) {
@@ -1640,9 +1775,9 @@ export class Runner {
         for (const obstacleCollixionBox of collisionBoxes) {
           // Adjust the box to actual positions.
           const adjTrexBox =
-              createAdjustedCollisionBox(tRexCollisionBox, tRexBox);
+            createAdjustedCollisionBox(tRexCollisionBox, tRexBox);
           const adjObstacleBox =
-              createAdjustedCollisionBox(obstacleCollixionBox, obstacleBox);
+            createAdjustedCollisionBox(obstacleCollixionBox, obstacleBox);
           const crashed = boxCompare(adjTrexBox, adjObstacleBox);
 
           // Draw boxes for debug.
@@ -1673,7 +1808,7 @@ export class Runner {
  * @return Whether the canvas was scaled.
  */
 function updateCanvasScaling(
-    canvas: HTMLCanvasElement, width?: number, height?: number): boolean {
+  canvas: HTMLCanvasElement, width?: number, height?: number): boolean {
   const context = canvas.getContext('2d');
   assert(context);
 
@@ -1681,8 +1816,8 @@ function updateCanvasScaling(
   const devicePixelRatio = Math.floor(window.devicePixelRatio) || 1;
   /** @suppress {missingProperties} */
   const backingStoreRatio = ('webkitBackingStorePixelRatio' in context) ?
-      Math.floor(context.webkitBackingStorePixelRatio as number) :
-      1;
+    Math.floor(context.webkitBackingStorePixelRatio as number) :
+    1;
   const ratio = devicePixelRatio / backingStoreRatio;
 
   // Upscale the canvas if the two ratios don't match
@@ -1715,8 +1850,8 @@ function updateCanvasScaling(
  */
 function getA11yString(stringName: string): string {
   return loadTimeData.valueExists(stringName) ?
-      loadTimeData.getString(stringName) :
-      '';
+    loadTimeData.getString(stringName) :
+    '';
 }
 
 
@@ -1736,11 +1871,11 @@ function vibrate(duration: number) {
  * @param container Element to append canvas to.
  */
 function createCanvas(
-    container: Element, width: number, height: number,
-    classname?: string): HTMLCanvasElement {
+  container: Element, width: number, height: number,
+  classname?: string): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.className =
-      classname ? RunnerClasses.CANVAS + ' ' + classname : RunnerClasses.CANVAS;
+    classname ? RunnerClasses.CANVAS + ' ' + classname : RunnerClasses.CANVAS;
   canvas.width = width;
   canvas.height = height;
   container.appendChild(canvas);
@@ -1765,7 +1900,6 @@ function decodeBase64ToArrayBuffer(base64String: string): ArrayBuffer {
 }
 
 
-
 //******************************************************************************
 
 
@@ -1776,9 +1910,9 @@ function decodeBase64ToArrayBuffer(base64String: string): ArrayBuffer {
  * @return The adjusted collision box object.
  */
 function createAdjustedCollisionBox(
-    box: CollisionBox, adjustment: CollisionBox): CollisionBox {
+  box: CollisionBox, adjustment: CollisionBox): CollisionBox {
   return new CollisionBox(
-      box.x + adjustment.x, box.y + adjustment.y, box.width, box.height);
+    box.x + adjustment.x, box.y + adjustment.y, box.width, box.height);
 }
 
 
@@ -1786,15 +1920,15 @@ function createAdjustedCollisionBox(
  * Draw the collision boxes for debug.
  */
 function drawCollisionBoxes(
-    canvasCtx: CanvasRenderingContext2D, tRexBox: CollisionBox,
-    obstacleBox: CollisionBox) {
+  canvasCtx: CanvasRenderingContext2D, tRexBox: CollisionBox,
+  obstacleBox: CollisionBox) {
   canvasCtx.save();
   canvasCtx.strokeStyle = '#f00';
   canvasCtx.strokeRect(tRexBox.x, tRexBox.y, tRexBox.width, tRexBox.height);
 
   canvasCtx.strokeStyle = '#0f0';
   canvasCtx.strokeRect(
-      obstacleBox.x, obstacleBox.y, obstacleBox.width, obstacleBox.height);
+    obstacleBox.x, obstacleBox.y, obstacleBox.width, obstacleBox.height);
   canvasCtx.restore();
 }
 
@@ -1812,9 +1946,9 @@ function boxCompare(tRexBox: CollisionBox, obstacleBox: CollisionBox): boolean {
 
   // Axis-Aligned Bounding Box method.
   if (tRexBoxX < obstacleBoxX + obstacleBox.width &&
-      tRexBoxX + tRexBox.width > obstacleBoxX &&
-      tRexBoxY < obstacleBoxY + obstacleBox.height &&
-      tRexBox.height + tRexBoxY > obstacleBoxY) {
+    tRexBoxX + tRexBox.width > obstacleBoxX &&
+    tRexBoxY < obstacleBoxY + obstacleBox.height &&
+    tRexBox.height + tRexBoxY > obstacleBoxY) {
     return true;
   }
 
