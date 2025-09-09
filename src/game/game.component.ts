@@ -1,20 +1,42 @@
-import {Component, computed, HostListener, inject, OnInit, signal, effect} from '@angular/core';
+import {
+  Component,
+  computed,
+  HostListener,
+  inject,
+  OnInit,
+  signal,
+  effect,
+  AfterViewInit,
+  ViewEncapsulation
+} from '@angular/core';
 import {Runner} from "./offline";
 import {DEFAULT_DIMENSIONS} from "./constants";
 import {GameConfigService} from "./game-config.service";
 import {timer} from "rxjs";
+import {AppComponent} from "../app/app.component";
 
 @Component({
   selector: 'app-game',
   imports: [],
   templateUrl: './game.component.html',
-  styleUrls: ['./game.component.scss']
+  styleUrls: ['./game.component.scss'],
+  encapsulation: ViewEncapsulation.None
 })
-export class GameComponent implements OnInit {
+export class GameComponent implements AfterViewInit {
+  private readonly app = inject(AppComponent)
+
   protected readonly config = inject(GameConfigService)
   protected readonly gameWidth = `${DEFAULT_DIMENSIONS.width}px`;
   protected readonly playing = signal(false);
-  protected readonly lookAheadWidth = computed(() => this.playing() ? `${this.config.lookAhead() * 10}%` : '0')
+  protected readonly fogWidth = computed(
+    () => {
+      if (this.playing()) {
+        return `${(1 - (this.config.lookAhead() / this.config.maxLookAhead)) * 50}%`;
+      } else {
+        return '0'
+      }
+    }
+  )
   protected readonly flashError = signal(false);
   private runner?: Runner;
 
@@ -22,19 +44,24 @@ export class GameComponent implements OnInit {
     effect(() => {
       this.runner?.updateConfigSetting('speed', this.config.speed() + this.config.defaults.speed)
     })
+    effect(() => {
+      this.app.playing.set(this.playing())
+    })
   }
 
-  ngOnInit() {
+  ngAfterViewInit() {
+    // Initialize after view to make sure width is set before
+    // the game runner tests dimensions
     this.runner = Runner.initializeInstance('#gameContainer', this.config.config)
   }
 
   @HostListener('game-playing')
-  private onPlaying() {
+  private onGamePlaying() {
     this.playing.set(true)
   }
 
   @HostListener('game-stopped')
-  private onStopped() {
+  private onGameStopped() {
     this.playing.set(false)
   }
 

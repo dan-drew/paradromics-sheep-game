@@ -61,3 +61,13 @@ resource "aws_cloudfront_distribution" "app" {
 
   depends_on = [aws_s3_bucket_public_access_block.app]
 }
+
+resource "null_resource" "invalidate_cache" {
+  triggers = {
+    dist_hash = join(":", sort([ for h in aws_s3_object.dist_file: h.source_hash ]))
+  }
+  provisioner "local-exec" {
+    command = "aws cloudfront create-invalidation --distribution-id ${aws_cloudfront_distribution.app.id} --paths '/*'"
+  }
+  depends_on = [aws_s3_object.dist_file]
+}

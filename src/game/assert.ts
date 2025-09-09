@@ -1,5 +1,6 @@
 export function assert(what: any | undefined) {
   if (what === null || what == undefined) {
-    throw new Error(`${what} isn't defined`);
+    console.trace('Assertion failed!')
+    throw new Error(`Assertion failed!`);
   }
 }

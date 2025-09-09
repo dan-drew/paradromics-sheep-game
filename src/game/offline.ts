@@ -17,10 +17,32 @@ import type {SpriteDefinition, SpriteDefinitionByType, SpritePositions} from './
 import {CollisionBox, GAME_TYPE, spriteDefinitionByType} from './offline_sprite_definitions';
 import {Status as TrexStatus, Trex} from './trex';
 import {getTimeStamp} from './utils';
+import {PendingEvent, PendingEvents} from "./pendingEvent";
 
 const HIDDEN_CLASS = 'hidden'
 
-type GameEventType = 'game-error' | 'game-playing' | 'game-stopped'
+export enum GameEventType {
+  Error = 'game-error',
+  Playing = 'game-playing',
+  Stopped = 'game-stopped',
+  JumpBegin = 'game-jump-begin',
+  JumpEnd = 'game-jump-end',
+  DuckBegin = 'game-duck-begin',
+  DuckEnd = 'game-duck-end',
+}
+
+const GAME_ACTION_EVENTS = new Set<GameEventType>([
+  GameEventType.JumpBegin,
+  GameEventType.JumpEnd,
+  GameEventType.DuckBegin,
+  GameEventType.DuckEnd
+])
+
+enum GameErrorType {
+  None = 'none',
+  Ignore = 'ignore',
+  Reverse = 'reverse',
+}
 
 enum A11yStrings {
   ARIA_LABEL = 'dinoGameA11yAriaLabel',
@@ -159,13 +181,20 @@ enum RunnerSounds {
   SCORE = 'offline-sound-reached',
 }
 
+enum KeyCode {
+  Up = 'ArrowUp',
+  Space = 'Space',
+  Down = 'ArrowDown',
+  Enter = 'Enter',
+}
+
 /**
  * Key code mapping.
  */
-const runnerKeycodes: { jump: string[], duck: string[], restart: string[] } = {
-  jump: ['ArrowUp', 'Space'],  // Up, spacebar
-  duck: ['ArrowDown'],      // Down
-  restart: ['Enter'],   // Enter
+const runnerKeycodes: { jump: KeyCode[], duck: KeyCode[], restart: KeyCode[] } = {
+  jump: [KeyCode.Up, KeyCode.Space],
+  duck: [KeyCode.Down],
+  restart: [KeyCode.Enter]
 };
 
 enum RunnerEvents {
@@ -269,7 +298,8 @@ export class Runner {
   private gamepadIndex?: number;
   private previousGamepad: Gamepad | null = null;
 
-  private latencyTimeout: number = -1
+  private readonly pendingEvents = new PendingEvents();
+  private lastGameEvent?: GameEventType
 
   // Initialize the singleton instance of Runner. Should only be called once.
   static initializeInstance(outerContainerId: string, config?: Config): Runner {
@@ -359,58 +389,86 @@ export class Runner {
     return this.config;
   }
 
-  private deferEventIfLatency(conditions: boolean = true, callback: () => void): void {
-    this.cancelLatency()
-    if (conditions && this.config.actionLatency > 0) {
-      this.latencyTimeout = setTimeout(() => {
-        this.latencyTimeout = -1
-        callback()
-      }, this.config.actionLatency)
-    } else {
-      callback()
-    }
+  private isReversedEvent(event: Event): boolean {
+    return 'gameError' in event
   }
 
-  private cancelLatency(): void {
-    if (this.latencyTimeout >= 0) {
-      clearTimeout(this.latencyTimeout);
-      this.latencyTimeout = -1
-    }
-  }
-
-  /**
-   * Optionally, apply forced error logic and either pass the event on or
-   * cause an "error" by changing the resulting action or dropping it.
-   * @param event Event to handler
-   * @param handler Handler to call
-   * @private
-   */
-  private handleActionEvent(event: Event, handler: (Event) => void): void {
+  private shouldError(event: GameEventType): GameErrorType {
     if (
-      this.playing && !this.crashed && !this.paused
-      && !('gameError' in event)
+      (event === GameEventType.JumpBegin || event== GameEventType.DuckBegin)
       && this.config.errorRate > 0
       && (Math.random() * 100 <= this.config.errorRate)
     ) {
-      // 50/50 chance of reversing the action or dropping it
-      if (Math.random() >= 0.5) {
-        // This will dispatch a new event in the event chain and drop the current one
-        console.info('Sheep: Reversing!')
-        this.reverseEvent(event)
-      } else {
-        console.info('Sheep: User action ignored!')
-      }
-
-      this.reportEvent('game-error')
+      return (Math.random() >= 0.5) ? GameErrorType.Ignore : GameErrorType.Reverse;
     } else {
-      // Pass on as-is
-      handler(event);
+      return GameErrorType.None
     }
   }
 
-  private reportEvent(eventType: GameEventType) {
-    console.debug(`Reporting game event: ${eventType}`);
-    this.outerContainerEl.dispatchEvent(new CustomEvent(eventType, { bubbles: true, cancelable: true }));
+  private reportError(errorType: GameErrorType, eventType: GameEventType, reversedType?: GameEventType): void {
+    console.info(`Game: Caused ${errorType} error for ${eventType}${ reversedType ? ` -> ${reversedType}` : '' }`);
+    this.containerEl?.dispatchEvent(new CustomEvent(
+      GameEventType.Error,
+      { bubbles: true, cancelable: true }
+    ));
+  }
+
+  private reportEvent(
+    eventType: GameEventType,
+    { allowError = true }: {
+      allowError?: boolean
+    } = {}
+  ) {
+    const originalEventType = eventType
+
+    // Apply error logic
+    let errorType: GameErrorType = allowError ? this.shouldError(eventType) : GameErrorType.None
+    switch (errorType) {
+      case GameErrorType.Ignore:
+        this.reportError(errorType, eventType);
+        return
+      case GameErrorType.Reverse:
+        switch (eventType) {
+          case GameEventType.JumpBegin: eventType = GameEventType.DuckBegin; break
+          case GameEventType.DuckBegin: eventType = GameEventType.JumpBegin; break
+          default: errorType = GameErrorType.None
+        }
+        break
+    }
+
+    // Make sure end event matches begin in case of reversal
+    switch (eventType) {
+      case GameEventType.JumpBegin:
+      case GameEventType.DuckBegin:
+        this.lastGameEvent = eventType
+        break
+
+      case GameEventType.JumpEnd:
+      case GameEventType.DuckEnd:
+        eventType = (this.lastGameEvent === GameEventType.JumpBegin) ?
+          GameEventType.JumpEnd :
+          GameEventType.DuckEnd
+        delete this.lastGameEvent
+        break
+    }
+
+    const event = new CustomEvent(eventType, {bubbles: true, cancelable: true})
+    event.errorEventType = eventType
+
+    const handler = (event: Event) => {
+      this.containerEl?.dispatchEvent(event)
+      if (errorType === GameErrorType.Reverse) {
+        this.reportError(errorType, originalEventType, eventType)
+      } else {
+        console.debug(`Game: Event ${eventType}`);
+      }
+    }
+
+    if (this.config.actionLatency > 0 && GAME_ACTION_EVENTS.has(eventType)) {
+      this.pendingEvents.add(new PendingEvent(event, this.config.actionLatency, handler))
+    } else {
+      handler(event)
+    }
   }
 
   /**
@@ -437,7 +495,7 @@ export class Runner {
 
     // Show notification when the activation key is pressed.
     document.addEventListener(RunnerEvents.KEYDOWN, e => {
-      if (this.isJumpEvent(e)) {
+      if (this.isJumpKeyEvent(e)) {
         assert(this.containerEl);
         this.containerEl.classList.add(RunnerClasses.SNACKBAR_SHOW);
         const iconElement = document.querySelector('.icon');
@@ -631,23 +689,23 @@ export class Runner {
     this.a11yStatusEl.textContent = '';
 
     // Add checkbox to slow down the game.
-    this.slowSpeedCheckboxLabel = document.createElement('label');
-    this.slowSpeedCheckboxLabel.className = 'slow-speed-option hidden';
-    this.slowSpeedCheckboxLabel.textContent =
-      getA11yString(A11yStrings.SPEED_LABEL);
-
-    this.slowSpeedCheckbox = document.createElement('input');
-    this.slowSpeedCheckbox.setAttribute('type', 'checkbox');
-    this.slowSpeedCheckbox.setAttribute(
-      'title', getA11yString(A11yStrings.SPEED_LABEL));
-    this.slowSpeedCheckbox.setAttribute('tabindex', '0');
-    this.slowSpeedCheckbox.setAttribute('checked', 'checked');
-
-    this.slowSpeedToggleEl = document.createElement('span');
-    this.slowSpeedToggleEl.className = 'slow-speed-toggle';
-
-    this.slowSpeedCheckboxLabel.appendChild(this.slowSpeedCheckbox);
-    this.slowSpeedCheckboxLabel.appendChild(this.slowSpeedToggleEl);
+    // this.slowSpeedCheckboxLabel = document.createElement('label');
+    // this.slowSpeedCheckboxLabel.className = 'slow-speed-option hidden';
+    // this.slowSpeedCheckboxLabel.textContent =
+    //   getA11yString(A11yStrings.SPEED_LABEL);
+    //
+    // this.slowSpeedCheckbox = document.createElement('input');
+    // this.slowSpeedCheckbox.setAttribute('type', 'checkbox');
+    // this.slowSpeedCheckbox.setAttribute(
+    //   'title', getA11yString(A11yStrings.SPEED_LABEL));
+    // this.slowSpeedCheckbox.setAttribute('tabindex', '0');
+    // this.slowSpeedCheckbox.setAttribute('checked', 'checked');
+    //
+    // this.slowSpeedToggleEl = document.createElement('span');
+    // this.slowSpeedToggleEl.className = 'slow-speed-toggle';
+    //
+    // this.slowSpeedCheckboxLabel.appendChild(this.slowSpeedCheckbox);
+    // this.slowSpeedCheckboxLabel.appendChild(this.slowSpeedToggleEl);
 
     if (IS_IOS) {
       this.outerContainerEl.appendChild(this.a11yStatusEl);
@@ -675,7 +733,7 @@ export class Runner {
     this.tRex = new Trex(this.canvas, this.spriteDef.tRex);
 
     this.outerContainerEl.appendChild(this.containerEl);
-    this.outerContainerEl.appendChild(this.slowSpeedCheckboxLabel);
+    // this.outerContainerEl.appendChild(this.slowSpeedCheckboxLabel);
 
     this.startListening();
     this.update();
@@ -1043,7 +1101,30 @@ export class Runner {
       case RunnerEvents.GAMEPADCONNECTED:
         this.onGamepadConnected();
         break;
+      case GameEventType.JumpBegin:
+        this.onJumpBegin(e);
+        break
+      case GameEventType.JumpEnd:
+        this.onJumpEnd(e);
+        break;
+      case GameEventType.DuckBegin:
+        this.onDuckBegin(e);
+        break;
+      case GameEventType.DuckEnd:
+        this.onDuckEnd(e);
+        break;
       default:
+        // Ignore
+    }
+  }
+
+  private handleGameAction(event: Event) {
+    if (this.shouldError(event)) {
+      if (Math.random() > 0.5) {
+
+      } else {
+        // Drop it
+      }
     }
   }
 
@@ -1056,7 +1137,7 @@ export class Runner {
       this.hasAudioCuesInternal = true;
       this.generatedSoundFx = new GeneratedSoundFx();
       this.config.clearTime *= 1.2;
-    } else if (this.isJumpEvent(e)) {
+    } else if (this.isJumpKeyEvent(e)) {
       this.onKeyDown(e);
     }
   }
@@ -1065,7 +1146,7 @@ export class Runner {
    * Prevent space key press from scrolling.
    */
   private preventScrolling(e: KeyboardEvent) {
-    if (e.keyCode === 32) {
+    if (e.code === KeyCode.Space) {
       e.preventDefault();
     }
   }
@@ -1074,26 +1155,26 @@ export class Runner {
    * Toggle speed setting if toggle is shown.
    */
   private toggleSpeed() {
-    if (this.hasAudioCuesInternal) {
-      assert(this.slowSpeedCheckbox);
-      const speedChange = this.hasSlowdown !== this.slowSpeedCheckbox.checked;
-
-      if (speedChange) {
-        assert(this.horizon);
-        assert(this.tRex);
-        this.hasSlowdownInternal = this.slowSpeedCheckbox.checked;
-        const updatedConfig =
-          this.hasSlowdown ? slowModeConfig : normalModeConfig;
-
-        this.config = Object.assign(defaultBaseConfig, updatedConfig);
-        this.currentSpeed = updatedConfig.speed;
-        this.tRex.enableSlowConfig();
-        this.horizon.adjustObstacleSpeed();
-      }
-      if (this.playing) {
-        this.disableSpeedToggle(true);
-      }
-    }
+    // if (this.hasAudioCuesInternal) {
+    //   assert(this.slowSpeedCheckbox);
+    //   const speedChange = this.hasSlowdown !== this.slowSpeedCheckbox.checked;
+    //
+    //   if (speedChange) {
+    //     assert(this.horizon);
+    //     assert(this.tRex);
+    //     this.hasSlowdownInternal = this.slowSpeedCheckbox.checked;
+    //     const updatedConfig =
+    //       this.hasSlowdown ? slowModeConfig : normalModeConfig;
+    //
+    //     this.config = Object.assign(defaultBaseConfig, updatedConfig);
+    //     this.currentSpeed = updatedConfig.speed;
+    //     this.tRex.enableSlowConfig();
+    //     this.horizon.adjustObstacleSpeed();
+    //   }
+    //   if (this.playing) {
+    //     this.disableSpeedToggle(true);
+    //   }
+    // }
   }
 
   /**
@@ -1101,24 +1182,24 @@ export class Runner {
    * From focus event or when audio cues are activated.
    */
   private showSpeedToggle(e?: Event) {
-    const isFocusEvent = e && e.type === 'focus';
-    if (this.hasAudioCuesInternal || isFocusEvent) {
-      assert(this.slowSpeedCheckboxLabel);
-      this.slowSpeedCheckboxLabel.classList.toggle(
-        HIDDEN_CLASS, isFocusEvent ? false : !this.crashed);
-    }
+    // const isFocusEvent = e && e.type === 'focus';
+    // if (this.hasAudioCuesInternal || isFocusEvent) {
+    //   assert(this.slowSpeedCheckboxLabel);
+    //   this.slowSpeedCheckboxLabel.classList.toggle(
+    //     HIDDEN_CLASS, isFocusEvent ? false : !this.crashed);
+    // }
   }
 
   /**
    * Disable the speed toggle.
    */
   private disableSpeedToggle(disable: boolean) {
-    assert(this.slowSpeedCheckbox);
-    if (disable) {
-      this.slowSpeedCheckbox.setAttribute('disabled', 'disabled');
-    } else {
-      this.slowSpeedCheckbox.removeAttribute('disabled');
-    }
+    // assert(this.slowSpeedCheckbox);
+    // if (disable) {
+    //   this.slowSpeedCheckbox.setAttribute('disabled', 'disabled');
+    // } else {
+    //   this.slowSpeedCheckbox.removeAttribute('disabled');
+    // }
   }
 
   /**
@@ -1148,6 +1229,11 @@ export class Runner {
     document.addEventListener(RunnerEvents.POINTERDOWN, this);
     document.addEventListener(RunnerEvents.POINTERUP, this);
 
+    // Game events
+    GAME_ACTION_EVENTS.forEach(eventType => {
+      document.addEventListener(eventType, this)
+    })
+
     if (this.isArcadeMode()) {
       // Gamepad
       window.addEventListener(RunnerEvents.GAMEPADCONNECTED, this);
@@ -1174,35 +1260,12 @@ export class Runner {
     return e.mobileMouseInput
   }
 
-  private isJumpEvent(e: Event): boolean {
+  private isJumpKeyEvent(e: Event): boolean {
     return e instanceof KeyboardEvent && runnerKeycodes.jump.includes(e.code)
   }
 
-  private isDuckEvent(e: Event): boolean {
+  private isDuckKeyEvent(e: Event): boolean {
     return e instanceof KeyboardEvent && runnerKeycodes.duck.includes(e.code)
-  }
-
-  /**
-   * Generate a new event that is the reverse of the current one
-   * @param e Source event
-   * @private
-   */
-  private reverseEvent(e: Event): KeyboardEvent {
-    const init: KeyboardEventInit = { bubbles: true, cancelable: true };
-
-    e.stopImmediatePropagation()
-    e.preventDefault()
-
-    if (this.isJumpEvent(e)) {
-      init.code = runnerKeycodes.duck[0]
-    } else {
-      init.code = runnerKeycodes.jump[0]
-    }
-
-    const newEvent = new KeyboardEvent(e.type, init)
-    newEvent.gameError = true
-    e.currentTarget!.dispatchEvent(newEvent)
-    console.info('Sheep: User action reversed', e, newEvent)
   }
 
   /**
@@ -1216,9 +1279,9 @@ export class Runner {
 
     if (this.isCanvasInView()) {
       // Allow toggling of speed toggle.
-      if (this.isJumpEvent(e) && e.target === this.slowSpeedCheckbox) {
-        return;
-      }
+      // if (this.isJumpEvent(e) && e.target === this.slowSpeedCheckbox) {
+      //   return;
+      // }
 
       if (!this.crashed && !this.paused) {
         // For a11y, screen reader activation.
@@ -1229,57 +1292,70 @@ export class Runner {
         //       (e.target === this.touchController || e.target === this.canvas)));
         assert(this.tRex);
 
-        this.handleActionEvent(e, e => {
-          this.deferEventIfLatency(
-            this.playing,
-            () => {
-              if (
-                this.isJumpEvent(e)
-                || e.type === RunnerEvents.TOUCHSTART
-                || this.isMobileMouseInput(e)
-              ) {
-                e.preventDefault();
-                // Starting the game for the first time.
-                if (!this.playing) {
-                  // Started by touch so create a touch controller.
-                  if (!this.touchController && e.type === RunnerEvents.TOUCHSTART) {
-                    this.createTouchController();
-                  }
+        if (
+          this.isJumpKeyEvent(e)
+          || e.type === RunnerEvents.TOUCHSTART
+          || this.isMobileMouseInput(e)
+        ) {
+          e.preventDefault();
+          let firstJump = false
+          // Starting the game for the first time.
+          if (!this.playing) {
+            firstJump = true;
 
-                  if (this.isMobileMouseInput(e)) {
-                    this.handleCanvasKeyPress(e);
-                  }
-                  this.loadSounds();
-                  this.setPlayStatus(true);
-                  this.update();
-                  if (window.errorPageController) {
-                    window.errorPageController.trackEasterEgg();
-                  }
-                }
-                // Start jump.
-                if (!this.tRex.jumping && !this.tRex.ducking) {
-                  if (this.hasAudioCuesInternal) {
-                    this.getGeneratedSoundFx().cancelFootSteps();
-                  } else {
-                    this.playSound(this.soundFx.BUTTON_PRESS);
-                  }
-                  this.tRex.startJump(this.currentSpeed);
-                }
-              } else if (this.playing && this.isDuckEvent(e)) {
-                e.preventDefault();
-                if (this.tRex.jumping) {
-                  // Speed drop, activated only when jump key is not pressed.
-                  this.tRex.setSpeedDrop();
-                } else if (!this.tRex.jumping && !this.tRex.ducking) {
-                  // Duck.
-                  this.tRex.setDuck(true);
-                }
-              }
+            // Started by touch so create a touch controller.
+            if (!this.touchController && e.type === RunnerEvents.TOUCHSTART) {
+              this.createTouchController();
             }
-          )
-        })
+
+            if (this.isMobileMouseInput(e)) {
+              this.handleCanvasKeyPress(e);
+            }
+            this.loadSounds();
+            this.setPlayStatus(true);
+            this.update();
+            // if (window.errorPageController) {
+            //   window.errorPageController.trackEasterEgg();
+            // }
+          }
+          // Start jump.
+          if (/*!this.tRex.jumping &&*/ !this.tRex.ducking) {
+            this.reportEvent(GameEventType.JumpBegin, { allowError: !firstJump });
+          }
+        } else if (this.playing && this.isDuckKeyEvent(e)) {
+          e.preventDefault();
+          this.reportEvent(GameEventType.DuckBegin)
+        }
       }
     }
+  }
+
+  private onJumpBegin(_e: Event) {
+    if (this.hasAudioCuesInternal) {
+      this.getGeneratedSoundFx().cancelFootSteps();
+    } else {
+      this.playSound(this.soundFx.BUTTON_PRESS);
+    }
+    this.tRex.startJump(this.currentSpeed);
+  }
+
+  private onJumpEnd(_e: Event) {
+    this.tRex.endJump();
+  }
+
+  private onDuckBegin(_e: Event) {
+    if (this.tRex.jumping) {
+      // Speed drop, activated only when jump key is not pressed.
+      this.tRex.setSpeedDrop();
+    } else if (!this.tRex.jumping && !this.tRex.ducking) {
+      // Duck.
+      this.tRex.setDuck(true);
+    }
+  }
+
+  private onDuckEnd(_e: Event) {
+    this.tRex.speedDrop = false;
+    this.tRex.setDuck(false);
   }
 
   /**
@@ -1287,15 +1363,12 @@ export class Runner {
    */
   private onKeyUp(e: Event) {
     assert(this.tRex);
-    const isjumpKey = this.isJumpEvent(e) || e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
+    const isJumpKey = this.isJumpKeyEvent(e) || e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
 
-    if (this.isRunning() && isjumpKey) {
-      this.tRex.endJump();
-    } else if (this.isDuckEvent(e)) {
-      this.deferEventIfLatency(true, () => {
-        this.tRex.speedDrop = false;
-        this.tRex.setDuck(false);
-      })
+    if (this.isRunning() && isJumpKey) {
+      this.reportEvent(GameEventType.JumpEnd)
+    } else if (this.isDuckKeyEvent(e)) {
+      this.reportEvent(GameEventType.DuckEnd)
     } else if (this.crashed) {
       // Check that enough time has elapsed before allowing jump key to restart.
       const deltaTime = getTimeStamp() - this.time;
@@ -1303,14 +1376,14 @@ export class Runner {
       if (
         this.isCanvasInView() &&
         (
-          runnerKeycodes.restart.includes(e['keyCode'] || '')
+          runnerKeycodes.restart.includes(e['code'] || '')
           || this.isLeftClickOnCanvas(e)
-          || (deltaTime >= this.config.gameoverClearTime && this.isJumpEvent(e))
+          || (deltaTime >= this.config.gameoverClearTime && this.isJumpKeyEvent(e))
         )
       ) {
         this.handleGameOverClicks(e);
       }
-    } else if (this.paused && isjumpKey) {
+    } else if (this.paused && isJumpKey) {
       // Reset the jump state
       this.tRex.reset();
       this.play();
@@ -1407,22 +1480,20 @@ export class Runner {
    * A user is able to tap the high score twice to reset it.
    */
   private handleGameOverClicks(e: Event) {
-    if (e.target !== this.slowSpeedCheckbox) {
-      assert(this.distanceMeter);
-      e.preventDefault();
-      if (this.distanceMeter.hasClickedOnHighScore(e) && this.highestScore) {
-        if (this.distanceMeter.isHighScoreFlashing()) {
-          // Subsequent click, reset the high score.
-          this.saveHighScore(0, true);
-          this.distanceMeter.resetHighScore();
-        } else {
-          // First click, flash the high score.
-          this.distanceMeter.startHighScoreFlashing();
-        }
+    assert(this.distanceMeter);
+    e.preventDefault();
+    if (this.distanceMeter.hasClickedOnHighScore(e) && this.highestScore) {
+      if (this.distanceMeter.isHighScoreFlashing()) {
+        // Subsequent click, reset the high score.
+        this.saveHighScore(0, true);
+        this.distanceMeter.resetHighScore();
       } else {
-        this.distanceMeter.cancelHighScoreFlashing();
-        this.restart();
+        // First click, flash the high score.
+        this.distanceMeter.startHighScoreFlashing();
       }
+    } else {
+      this.distanceMeter.cancelHighScoreFlashing();
+      this.restart();
     }
   }
 
@@ -1562,15 +1633,15 @@ export class Runner {
       this.containerEl.setAttribute(
         'title', getA11yString(A11yStrings.ARIA_LABEL));
     }
-    this.showSpeedToggle();
-    this.disableSpeedToggle(false);
+    // this.showSpeedToggle();
+    // this.disableSpeedToggle(false);
   }
 
   private stop() {
     this.setPlayStatus(false);
     this.paused = true;
     cancelAnimationFrame(this.raqId);
-    this.cancelLatency()
+    this.pendingEvents.cancelAll()
     this.raqId = 0;
     if (this.hasAudioCuesInternal) {
       this.getGeneratedSoundFx().stopAll();
@@ -1630,7 +1701,7 @@ export class Runner {
     }
     this.playing = isPlaying;
 
-    this.reportEvent(isPlaying ? 'game-playing' : 'game-stopped');
+    this.reportEvent(isPlaying ? GameEventType.Playing : GameEventType.Stopped);
   }
 
   /**

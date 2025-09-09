@@ -1,42 +1,68 @@
 <app-game/>
 
+<div class="presets row w100">
+  @for (presetName of config.presetNames; track presetName) {
+    <button
+      type="button"
+      (click)="config.setPreset(presetName)"
+      [class.disabled]="playing()"
+    >{{ presetName | titlecase }}
+    </button>
+  }
+</div>
+
 <div class="controls">
   <div>
-    Latency
+    Delay
   </div>
   <div>
-    <app-slider [(value)]="config.config.actionLatency" [maxValue]="config.config.maxActionLatency" [step]="100"></app-slider>
+    <app-slider
+      [(value)]="config.config.actionLatency"
+      [maxValue]="config.config.maxActionLatency"
+      [step]="100"
+      [disabled]="playing()"
+    />
   </div>
   <div>
     {{ config.config.actionLatency }}ms
   </div>
   @if (!config.config.fogDisabled) {
     <div>
-      Fog
+      Visibility
     </div>
     <div>
-      <app-slider [(value)]="config.lookAhead" [maxValue]="5"></app-slider>
+      <app-slider [(value)]="reverseLookAhead" [maxValue]="config.maxLookAhead" [disabled]="playing()"/>
     </div>
     <div>
-      {{ config.lookAhead() * 10 }}%
+      {{ config.lookAhead() / config.maxLookAhead / 2 + 0.5 | percent: '.0' }}
     </div>
   }
   <div>
     Errors
   </div>
   <div>
-    <app-slider [(value)]="config.config.errorRate" [maxValue]="100" [step]="10"></app-slider>
+    <app-slider [(value)]="config.config.errorRate" [maxValue]="100" [step]="10" [disabled]="playing()"/>
   </div>
   <div>
     {{ config.config.errorRate }}%
   </div>
-  <div>
-    Speed
-  </div>
-  <div>
-    <app-slider [(value)]="config.speed" [maxValue]="9"></app-slider>
-  </div>
-  <div>
-    {{ config.speed() + 1 }}
-  </div>
+  @if (showSpeed) {
+    <div>
+      Speed
+    </div>
+    <div>
+      <app-slider [(value)]="config.speed" [maxValue]="9" [disabled]="playing()"/>
+    </div>
+    <div>
+      {{ config.speed() + 1 }}
+    </div>
+  }
+</div>
+
+<div
+  class="message overlay row"
+  [class.hidden]="appHasFocus()"
+  tabindex="-1"
+  (click)="$event.stopPropagation(); $event.preventDefault()">
+  <div class="message-text">Click here to play!</div>
 </div>

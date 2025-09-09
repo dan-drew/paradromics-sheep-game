@@ -1,4 +1,4 @@
-<div class="fog" [style.width]="lookAheadWidth()">
+<div class="fog" [style.width]="fogWidth()">
   <div class="cloud"></div>
   <div class="cloud"></div>
   <div class="cloud"></div>
@@ -6,6 +6,10 @@
   <div class="cloud"></div>
 </div>
 <div id="gameContainer" [style.width]="gameWidth" [class.flash]="flashError()"></div>
+
+<div class="message wh100" [class.hidden]="playing()" style="z-index: 10; position: absolute; top: 0; left: 0;">
+  <div class="message-text">Jump to play!</div>
+</div>
 
 <div id="offline-resources" class="hidden">
   <img id="offline-resources-1x" src="/sheep-100.png" alt="sheep-100">
@@ -19,3 +23,4 @@
     <audio id="offline-sound-reached" src="/sounds/score-reached.mp3"></audio>
   </template>
 </div>
+

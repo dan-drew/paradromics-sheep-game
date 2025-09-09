@@ -291,7 +291,7 @@ export class DistanceMeter {
     let x = 0;
     let y = 0;
 
-    if (e instanceof TouchEvent) {
+    if (e.type.startsWith('touch')) {
       // Bounds for touch differ from pointer.
       const canvasBounds = this.canvas.getBoundingClientRect();
       x = e.touches[0]!.clientX - canvasBounds.left;

@@ -23,3 +23,12 @@
     width: 200px;
   }
 }
+
+.presets {
+  justify-content: space-evenly;
+  gap: 1ch;
+
+  button {
+    flex: 1;
+  }
+}
