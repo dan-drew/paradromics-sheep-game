@@ -7,7 +7,7 @@ import type {Dimensions} from './dimensions';
 // TODO(salg): Use preprocessor to filter IOS code at build time.
 export const IS_IOS: boolean = /CriOS/.test(window.navigator.userAgent);
 
-export const IS_HIDPI: boolean = window.devicePixelRatio > 1;
+export const IS_HIDPI: boolean = true // window.devicePixelRatio > 1;
 
 export const IS_MOBILE: boolean =
     /Android/.test(window.navigator.userAgent) || IS_IOS;

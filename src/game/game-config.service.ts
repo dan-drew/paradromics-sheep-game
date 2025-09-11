@@ -1,24 +1,23 @@
-import {Injectable, signal} from '@angular/core';
+import {effect, Injectable, Signal, signal, WritableSignal} from '@angular/core';
 import {Config, defaultBaseConfig, normalModeConfig} from "./offline";
 
 interface GameConfigPreset {
+  name: string;
   errors: number;
   latency: number;
 }
 
-interface GameConfigPresets {
-  normal: GameConfigPreset
-  latency: GameConfigPreset
-  errors: GameConfigPreset
-}
+const PRESETS: GameConfigPreset[] = [
+  // { name: 'Normal', latency: 0, errors: 0},
+  { name: 'High Delay', latency: normalModeConfig.maxActionLatency, errors: 0 },
+  { name: 'High Error', latency: 0, errors: 50 },
+]
 
-const PRESETS: GameConfigPresets = {
-  normal: { latency: 0, errors: 0},
-  latency: { latency: normalModeConfig.maxActionLatency, errors: 0 },
-  errors: { latency: 0, errors: 50 },
+interface SessionSettings {
+  latency: number;
+  errorRate: number;
+  lookAhead: number;
 }
-
-type GameConfigPresetName = keyof GameConfigPresets;
 
 @Injectable({
   providedIn: 'root'
@@ -27,13 +26,48 @@ export class GameConfigService {
   public readonly defaults = Object.freeze(Object.assign({}, defaultBaseConfig, normalModeConfig))
   public readonly config: Config = Object.assign({}, this.defaults);
   public readonly maxLookAhead = 5
-  public readonly lookAhead = signal(this.maxLookAhead);
-  public readonly speed = signal(0)
-  public readonly presetNames: readonly GameConfigPresetName[] = ['normal', 'latency', 'errors'];
+  public readonly lookAhead: WritableSignal<number>
+  public readonly speed: WritableSignal<number>
+  public readonly latency: WritableSignal<number>
+  public readonly errorRate: WritableSignal<number>
+  public readonly presets = PRESETS
 
-  setPreset(presetName: GameConfigPresetName) {
-    const preset: GameConfigPreset = PRESETS[presetName];
-    this.config.actionLatency = preset.latency;
-    this.config.errorRate = preset.errors;
+  setPreset(preset: GameConfigPreset) {
+    this.latency.set(preset.latency);
+    this.errorRate.set(preset.errors);
+  }
+
+  constructor() {
+    const settings = this.loadSaved()
+    this.lookAhead = signal(settings?.lookAhead ?? this.maxLookAhead);
+    this.speed = signal(0)
+    this.latency = signal(settings?.latency ?? this.config.actionLatency)
+    this.errorRate = signal(settings?.errorRate ?? this.config.errorRate)
+
+    effect(() => {
+      this.config.actionLatency = this.latency()
+      this.config.errorRate = this.errorRate()
+
+      const settings: SessionSettings = {
+        latency: this.latency(),
+        errorRate: this.errorRate(),
+        lookAhead: this.lookAhead()
+      }
+
+      sessionStorage.setItem('settings', JSON.stringify(settings));
+    })
+  }
+
+  private loadSaved(): SessionSettings | null {
+    const settingsString = sessionStorage.getItem('settings')
+    if (settingsString) {
+      try {
+        return JSON.parse(settingsString) as SessionSettings;
+        // if ('latency' in settings) this.latency.set(settings.latency);
+        // if ('errorRate' in settings) this.errorRate.set(settings.errorRate);
+        // if ('lookAhead' in settings) this.lookAhead.set(settings.lookAhead);
+      } catch {}
+    }
+    return null
   }
 }

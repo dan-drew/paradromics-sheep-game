@@ -1,12 +1,22 @@
-<app-game/>
+@if (iframeSrc) {
+  <h1>Blah Blah Blah</h1>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur sodales neque ut lectus congue imperdiet. Suspendisse ac maximus est, nec bibendum ante. Maecenas sed sapien rutrum, rhoncus felis quis, placerat lacus. Quisque vitae vehicula tortor, et porta purus. Quisque pulvinar vitae metus nec laoreet. Integer sodales tempus euismod. Donec nec.</p>
+  <iframe #iframe width="600" height="450"></iframe>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur sodales neque ut lectus congue imperdiet. Suspendisse ac maximus est, nec bibendum ante. Maecenas sed sapien rutrum, rhoncus felis quis, placerat lacus. Quisque vitae vehicula tortor, et porta purus. Quisque pulvinar vitae metus nec laoreet. Integer sodales tempus euismod. Donec nec.</p>
+} @else {
+<div class="column align-center game">
+  <app-game/>
+
+  <div class="instructions" style="white-space: pre" [innerHTML]="instructions()"></div>
+</div>
 
 <div class="presets row w100">
-  @for (presetName of config.presetNames; track presetName) {
+  @for ($preset of config.presets; track $preset.name) {
     <button
       type="button"
-      (click)="config.setPreset(presetName)"
+      (click)="config.setPreset($preset)"
       [class.disabled]="playing()"
-    >{{ presetName | titlecase }}
+    >{{ $preset.name }}
     </button>
   }
 </div>
@@ -17,14 +27,14 @@
   </div>
   <div>
     <app-slider
-      [(value)]="config.config.actionLatency"
+      [(value)]="config.latency"
       [maxValue]="config.config.maxActionLatency"
       [step]="100"
       [disabled]="playing()"
     />
   </div>
   <div>
-    {{ config.config.actionLatency }}ms
+    {{ config.latency() }}ms
   </div>
   @if (!config.config.fogDisabled) {
     <div>
@@ -41,10 +51,10 @@
     Errors
   </div>
   <div>
-    <app-slider [(value)]="config.config.errorRate" [maxValue]="100" [step]="10" [disabled]="playing()"/>
+    <app-slider [(value)]="config.errorRate" [maxValue]="100" [step]="10" [disabled]="playing()"/>
   </div>
   <div>
-    {{ config.config.errorRate }}%
+    {{ config.errorRate() }}%
   </div>
   @if (showSpeed) {
     <div>
@@ -66,3 +76,4 @@
   (click)="$event.stopPropagation(); $event.preventDefault()">
   <div class="message-text">Click here to play!</div>
 </div>
+}

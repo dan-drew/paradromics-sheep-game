@@ -2,9 +2,20 @@ app-game {
   display: block;
   position: relative;
   outline: none;
+  box-sizing: border-box;
 
   div, canvas {
     outline: none;
+  }
+
+  canvas {
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .message {
+    --background-color: #fff0;
+    --background-blur: 0px;
   }
 
   #gameContainer {
@@ -12,6 +23,8 @@ app-game {
     height: min-content;
     border: 2px solid transparent;
     border-radius: 3px;
+    transform-origin: center left;
+    box-sizing: border-box;
 
     @keyframes flashBorder {
       0% {
@@ -37,6 +50,7 @@ app-game {
     bottom: 0;
     z-index: 1000;
     transition: width 1s ease-out;
+    pointer-events: none;
     //background: linear-gradient(to right, #7770, #777 10px);
 
     .cloud {
@@ -48,6 +62,7 @@ app-game {
       background-size: auto 100%;
       background-repeat: no-repeat;
       background-position: left top;
+      pointer-events: none;
 
       --cloud-offset: 0.75in;
       animation: clouds 1000ms linear infinite;

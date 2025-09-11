@@ -1,19 +1,19 @@
 import {
+  AfterViewInit,
   Component,
   computed,
+  effect,
   HostListener,
   inject,
-  OnInit,
   signal,
-  effect,
-  AfterViewInit,
   ViewEncapsulation
 } from '@angular/core';
 import {Runner} from "./offline";
 import {DEFAULT_DIMENSIONS} from "./constants";
 import {GameConfigService} from "./game-config.service";
-import {timer} from "rxjs";
+import {Subscription, timer} from "rxjs";
 import {AppComponent} from "../app/app.component";
+import {LoggerService} from "../logger.service";
 
 @Component({
   selector: 'app-game',
@@ -24,6 +24,7 @@ import {AppComponent} from "../app/app.component";
 })
 export class GameComponent implements AfterViewInit {
   private readonly app = inject(AppComponent)
+  private readonly logger = inject(LoggerService)
 
   protected readonly config = inject(GameConfigService)
   protected readonly gameWidth = `${DEFAULT_DIMENSIONS.width}px`;
@@ -37,8 +38,15 @@ export class GameComponent implements AfterViewInit {
       }
     }
   )
+  protected readonly pageWidth = signal(window.visualViewport!.width)
+  protected readonly gameScale = computed(() => {
+    const scale = this.pageWidth() / DEFAULT_DIMENSIONS.width;
+    return Math.min(1, scale).toFixed(2)
+  })
   protected readonly flashError = signal(false);
   private runner?: Runner;
+  private resizeObserver?: ResizeObserver;
+  private resizeTimer?: Subscription;
 
   constructor() {
     effect(() => {
@@ -47,12 +55,25 @@ export class GameComponent implements AfterViewInit {
     effect(() => {
       this.app.playing.set(this.playing())
     })
+
+    this.resizeObserver = new ResizeObserver(() => this.onResize())
+    this.resizeObserver.observe(document.body)
+  }
+
+  private onResize() {
+    if (!this.resizeTimer) {
+      this.resizeTimer = timer(100).subscribe(() => {
+        delete this.resizeTimer
+        console.info('Resize timer');
+        this.pageWidth.set(window.visualViewport!.width);
+      })
+    }
   }
 
   ngAfterViewInit() {
     // Initialize after view to make sure width is set before
     // the game runner tests dimensions
-    this.runner = Runner.initializeInstance('#gameContainer', this.config.config)
+    this.runner = Runner.initializeInstance('#gameContainer', this.logger, this.config.config)
   }
 
   @HostListener('game-playing')

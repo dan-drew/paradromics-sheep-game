@@ -18,6 +18,7 @@ import {CollisionBox, GAME_TYPE, spriteDefinitionByType} from './offline_sprite_
 import {Status as TrexStatus, Trex} from './trex';
 import {getTimeStamp} from './utils';
 import {PendingEvent, PendingEvents} from "./pendingEvent";
+import {LoggerService} from "../logger.service";
 
 const HIDDEN_CLASS = 'hidden'
 
@@ -300,11 +301,12 @@ export class Runner {
 
   private readonly pendingEvents = new PendingEvents();
   private lastGameEvent?: GameEventType
+  private logger!: LoggerService;
 
   // Initialize the singleton instance of Runner. Should only be called once.
-  static initializeInstance(outerContainerId: string, config?: Config): Runner {
+  static initializeInstance(outerContainerId: string, logger: LoggerService, config?: Config): Runner {
     assert(runnerInstance === null);
-    runnerInstance = new Runner(outerContainerId, config);
+    runnerInstance = new Runner(outerContainerId, logger, config);
     runnerInstance.loadImages();
 
     return runnerInstance;
@@ -315,11 +317,12 @@ export class Runner {
     return runnerInstance;
   }
 
-  private constructor(outerContainerId: string, configParam?: Config) {
+  private constructor(outerContainerId: string, logger: LoggerService, configParam?: Config) {
     const outerContainerElement =
       document.querySelector<HTMLElement>(outerContainerId);
     assert(outerContainerElement);
     this.outerContainerEl = outerContainerElement;
+    this.logger = logger;
 
     this.config =
       configParam || Object.assign({}, defaultBaseConfig, normalModeConfig);
@@ -406,7 +409,7 @@ export class Runner {
   }
 
   private reportError(errorType: GameErrorType, eventType: GameEventType, reversedType?: GameEventType): void {
-    console.info(`Game: Caused ${errorType} error for ${eventType}${ reversedType ? ` -> ${reversedType}` : '' }`);
+    this.logger.info(`Caused ${errorType} error for ${eventType}${ reversedType ? ` -> ${reversedType}` : '' }`);
     this.containerEl?.dispatchEvent(new CustomEvent(
       GameEventType.Error,
       { bubbles: true, cancelable: true }
@@ -420,38 +423,36 @@ export class Runner {
     } = {}
   ) {
     const originalEventType = eventType
+    let errorType: GameErrorType = GameErrorType.Ignore
 
-    // Apply error logic
-    let errorType: GameErrorType = allowError ? this.shouldError(eventType) : GameErrorType.None
-    switch (errorType) {
-      case GameErrorType.Ignore:
-        this.reportError(errorType, eventType);
-        return
-      case GameErrorType.Reverse:
-        switch (eventType) {
-          case GameEventType.JumpBegin: eventType = GameEventType.DuckBegin; break
-          case GameEventType.DuckBegin: eventType = GameEventType.JumpBegin; break
-          default: errorType = GameErrorType.None
-        }
-        break
+    // Handle action events
+    if (eventType === GameEventType.JumpBegin || eventType === GameEventType.DuckBegin) {
+      // Apply error logic
+      errorType = allowError ? this.shouldError(eventType) : GameErrorType.None
+      switch (errorType) {
+        case GameErrorType.Ignore:
+          this.reportError(errorType, eventType);
+          return
+        case GameErrorType.Reverse:
+          eventType = eventType === GameEventType.JumpBegin ? GameEventType.DuckBegin : GameEventType.JumpBegin
+          break
+      }
+
+      // Save last begin event to make sure end event syncs up
+      this.lastGameEvent = eventType
+    } else if (eventType === GameEventType.JumpEnd || eventType === GameEventType.DuckEnd) {
+      // Assume begin action was ignored
+      if (!this.lastGameEvent) return
+
+      // Make sure end event matches begin in case of reversal
+      eventType = (this.lastGameEvent === GameEventType.JumpBegin) ?
+        GameEventType.JumpEnd :
+        GameEventType.DuckEnd
+
+      delete this.lastGameEvent
     }
 
-    // Make sure end event matches begin in case of reversal
-    switch (eventType) {
-      case GameEventType.JumpBegin:
-      case GameEventType.DuckBegin:
-        this.lastGameEvent = eventType
-        break
-
-      case GameEventType.JumpEnd:
-      case GameEventType.DuckEnd:
-        eventType = (this.lastGameEvent === GameEventType.JumpBegin) ?
-          GameEventType.JumpEnd :
-          GameEventType.DuckEnd
-        delete this.lastGameEvent
-        break
-    }
-
+    // Handle the event
     const event = new CustomEvent(eventType, {bubbles: true, cancelable: true})
     event.errorEventType = eventType
 
@@ -460,7 +461,7 @@ export class Runner {
       if (errorType === GameErrorType.Reverse) {
         this.reportError(errorType, originalEventType, eventType)
       } else {
-        console.debug(`Game: Event ${eventType}`);
+        this.logger.debug(`Event ${eventType}`);
       }
     }
 
@@ -779,7 +780,7 @@ export class Runner {
 
     const boxStyles = window.getComputedStyle(this.outerContainerEl);
     const padding = Number(
-      boxStyles.paddingLeft.substr(0, boxStyles.paddingLeft.length - 2));
+      boxStyles.paddingLeft.substring(0, boxStyles.paddingLeft.length - 2));
 
     this.dimensions.width = this.outerContainerEl.offsetWidth - padding * 2;
     if (this.isArcadeMode()) {
@@ -1084,7 +1085,7 @@ export class Runner {
 
   handleEvent(e: Event) {
     if (e.gameError) {
-      console.debug('Got error event!', e)
+      this.logger.debug('Got error event!', e)
     }
 
     switch (e.type) {
@@ -1115,16 +1116,6 @@ export class Runner {
         break;
       default:
         // Ignore
-    }
-  }
-
-  private handleGameAction(event: Event) {
-    if (this.shouldError(event)) {
-      if (Math.random() > 0.5) {
-
-      } else {
-        // Drop it
-      }
     }
   }
 
@@ -1261,11 +1252,19 @@ export class Runner {
   }
 
   private isJumpKeyEvent(e: Event): boolean {
-    return e instanceof KeyboardEvent && runnerKeycodes.jump.includes(e.code)
+    return (
+      e instanceof KeyboardEvent
+      && !e.repeat  // Prevent double-jumps from holding the key down
+      && runnerKeycodes.jump.includes(e.code)
+    )
   }
 
   private isDuckKeyEvent(e: Event): boolean {
-    return e instanceof KeyboardEvent && runnerKeycodes.duck.includes(e.code)
+    return (
+      e instanceof KeyboardEvent
+      && !e.repeat
+      && runnerKeycodes.duck.includes(e.code)
+    )
   }
 
   /**
@@ -1365,9 +1364,9 @@ export class Runner {
     assert(this.tRex);
     const isJumpKey = this.isJumpKeyEvent(e) || e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
 
-    if (this.isRunning() && isJumpKey) {
+    if (this.playing && this.isRunning() && isJumpKey) {
       this.reportEvent(GameEventType.JumpEnd)
-    } else if (this.isDuckKeyEvent(e)) {
+    } else if (this.playing && this.isDuckKeyEvent(e)) {
       this.reportEvent(GameEventType.DuckEnd)
     } else if (this.crashed) {
       // Check that enough time has elapsed before allowing jump key to restart.
