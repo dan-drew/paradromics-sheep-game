@@ -1,17 +1,6 @@
-import {effect, Injectable, Signal, signal, WritableSignal} from '@angular/core';
+import {effect, Injectable, signal, WritableSignal} from '@angular/core';
 import {Config, defaultBaseConfig, normalModeConfig} from "./offline";
-
-interface GameConfigPreset {
-  name: string;
-  errors: number;
-  latency: number;
-}
-
-const PRESETS: GameConfigPreset[] = [
-  // { name: 'Normal', latency: 0, errors: 0},
-  { name: 'High Delay', latency: normalModeConfig.maxActionLatency, errors: 0 },
-  { name: 'High Error', latency: 0, errors: 50 },
-]
+import {GameConfigPreset, PRESETS} from "./presets";
 
 interface SessionSettings {
   latency: number;

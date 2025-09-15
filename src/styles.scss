@@ -5,7 +5,6 @@
   font-weight: 400;
   font-style: normal;
   font-size: 20px;
-  overflow: hidden;
 
   --color: #333;
   --disabled-color: #aaa;
@@ -16,6 +15,7 @@
 body {
   margin: 0;
   padding: 0;
+  overflow: hidden auto;
 }
 
 .disabled {

@@ -1,6 +1,6 @@
-export function assert(what: any | undefined) {
+export function assert(what: any | undefined, message: string = 'Assertion failed!') {
   if (what === null || what == undefined) {
-    console.trace('Assertion failed!')
-    throw new Error(`Assertion failed!`);
+    console.trace(message)
+    throw new Error(message);
   }
 }

@@ -392,8 +392,25 @@ export class Runner {
     return this.config;
   }
 
-  private isReversedEvent(event: Event): boolean {
-    return 'gameError' in event
+  private playGame(): void {
+    this.setPlayStatus(true);
+    this.update();
+    this.reportEvent('game-jump-begin', { allowError: false })
+  }
+
+  trigger(event: GameEventType) {
+    switch (event) {
+      case GameEventType.Playing:
+        this.playGame()
+        break
+      case GameEventType.JumpBegin:
+      case GameEventType.DuckEnd:
+      case GameEventType.DuckBegin:
+        this.reportEvent(event)
+        break
+      default:
+        assert(false, `Cannot trigger ${event}`)
+    }
   }
 
   private shouldError(event: GameEventType): GameErrorType {

@@ -8,12 +8,13 @@ import {
   signal,
   ViewEncapsulation
 } from '@angular/core';
-import {Runner} from "./offline";
+import {GameEventType, Runner} from "./offline";
 import {DEFAULT_DIMENSIONS} from "./constants";
 import {GameConfigService} from "./game-config.service";
 import {Subscription, timer} from "rxjs";
 import {AppComponent} from "../app/app.component";
 import {LoggerService} from "../logger.service";
+import {assert} from "./assert";
 
 @Component({
   selector: 'app-game',
@@ -74,6 +75,10 @@ export class GameComponent implements AfterViewInit {
     // Initialize after view to make sure width is set before
     // the game runner tests dimensions
     this.runner = Runner.initializeInstance('#gameContainer', this.logger, this.config.config)
+  }
+
+  trigger(event: GameEventType) {
+    this.runner?.trigger(event)
   }
 
   @HostListener('game-playing')

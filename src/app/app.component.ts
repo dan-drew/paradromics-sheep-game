@@ -4,6 +4,7 @@ import {GameComponent} from "../game/game.component";
 import {GameConfigService} from "../game/game-config.service";
 import {PercentPipe} from "@angular/common";
 import {IS_MOBILE} from "../game/constants";
+import {GameEventType} from "../game/offline";
 
 const INSTRUCTIONS = {
   start: IS_MOBILE  ? 'Tap to start!' : 'Press &uarr; to Start!',
@@ -31,8 +32,10 @@ export class AppComponent implements AfterViewInit {
   protected readonly appHasFocus = signal(document.hasFocus());
   protected readonly instructions = signal(INSTRUCTIONS.start)
   readonly showSpeed = false
+  protected readonly mobile = IS_MOBILE;
   protected readonly iframeSrc?: string
   protected readonly iframe = viewChild<ElementRef<HTMLIFrameElement>>('iframe');
+  private readonly game = viewChild(GameComponent);
 
   title = 'Sheep Game';
 
@@ -74,5 +77,12 @@ export class AppComponent implements AfterViewInit {
         this.appHasFocus.set(true);
         break
     }
+  }
+
+  onButtonEvent(e: Event, gameEvent: string) {
+    e.preventDefault();
+    e.stopImmediatePropagation()
+
+    this.game()?.trigger(gameEvent as GameEventType)
   }
 }
