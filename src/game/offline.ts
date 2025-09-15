@@ -177,9 +177,9 @@ enum RunnerClasses {
  * Sound FX. Reference to the ID of the audio tag on interstitial page.
  */
 enum RunnerSounds {
-  BUTTON_PRESS = 'offline-sound-press',
-  HIT = 'offline-sound-hit',
-  SCORE = 'offline-sound-reached',
+  BUTTON_PRESS = 'press',
+  HIT = 'hit',
+  SCORE = 'score-reached',
 }
 
 enum KeyCode {
@@ -603,32 +603,32 @@ export class Runner {
    * Load and decode base 64 encoded sounds.
    */
   private loadSounds() {
-    return; // DDREW TODO
     if (IS_IOS) {
       return;
     }
     this.audioContext = new AudioContext();
 
-    const resourceTemplateElement = document.querySelector<HTMLTemplateElement>(
-      `#${this.config.resourceTemplateId}`);
-    assert(resourceTemplateElement);
-    const resourceTemplate = resourceTemplateElement.content;
-
     for (const sound in RunnerSounds) {
-      const audioElement = resourceTemplate.querySelector<HTMLAudioElement>(
-        `#${RunnerSounds[sound as keyof typeof RunnerSounds]}`);
-      assert(audioElement);
-      let soundSrc = audioElement.src;
-      soundSrc = soundSrc.substring(soundSrc.indexOf(',') + 1);
-      const buffer = decodeBase64ToArrayBuffer(soundSrc);
-
-      // Async, so no guarantee of order in array.
-      this.audioContext.decodeAudioData(buffer, audioBuffer => {
+      this.loadSound(sound).then(audioBuffer => {
         this.soundFx = {
           ...this.soundFx,
           [sound]: audioBuffer,
         };
-      });
+      })
+    }
+  }
+
+  private async loadSound(sound: RunnerSounds): Promise<AudioBuffer> {
+    try {
+      const soundFile = RunnerSounds[sound as keyof typeof RunnerSounds]
+      const response = await fetch(`/sounds/${soundFile}.mp3`)
+      if (response.ok) {
+        const buffer = await response.arrayBuffer()
+        return await this.audioContext!.decodeAudioData(buffer);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to load ${sound}: ${error}`)
+      return undefined
     }
   }
 
@@ -735,7 +735,7 @@ export class Runner {
 
     this.outerContainerEl.appendChild(this.containerEl);
     // this.outerContainerEl.appendChild(this.slowSpeedCheckboxLabel);
-
+    this.loadSounds()
     this.startListening();
     this.update();
 
@@ -1310,7 +1310,7 @@ export class Runner {
             if (this.isMobileMouseInput(e)) {
               this.handleCanvasKeyPress(e);
             }
-            this.loadSounds();
+            // this.loadSounds();
             this.setPlayStatus(true);
             this.update();
             // if (window.errorPageController) {
@@ -1762,9 +1762,8 @@ export class Runner {
   /**
    * Play a sound.
    */
-  private playSound(soundBuffer?: AudioBuffer) {
+  private playSound(soundBuffer?: AudioBuffer | MediaElementAudioSourceNode) {
     if (soundBuffer) {
-      assert(this.audioContext);
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = soundBuffer;
       sourceNode.connect(this.audioContext.destination);
