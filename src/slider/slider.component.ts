@@ -20,6 +20,7 @@ export class SliderComponent {
 
   @HostListener('click', ['$event'])
   protected onClick(event: MouseEvent) {
+    event.preventDefault()
     event.stopImmediatePropagation();
 
     if (this.disabled()) {
@@ -28,7 +29,7 @@ export class SliderComponent {
 
     const rect = (event.target as HTMLElement).getBoundingClientRect();
     const x = event.clientX - rect.left
-    const percent = x / rect.width;
+    const percent = Math.max(0, Math.min(1, x / rect.width))
 
     this.value.set(Math.round((this.maxValue() / this.step()) * percent) * this.step());
   }
