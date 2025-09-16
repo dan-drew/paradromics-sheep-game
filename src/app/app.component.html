@@ -10,8 +10,8 @@
     Quisque vitae vehicula tortor, et porta purus. Quisque pulvinar vitae metus nec laoreet. Integer sodales tempus
     euismod. Donec nec.</p>
 } @else {
-  <div class="column align-center game">
-    <app-game #game/>
+  <div class="column align-stretch game w100">
+    <app-game/>
 
     @if (mobile) {
       <div class="actions row">
@@ -20,6 +20,7 @@
             type="button"
             class="jump"
             (pointerdown)="onButtonEvent($event, 'game-jump-begin')"
+            (click)="$event.stopPropagation()"
             (contextmenu)="$event.preventDefault()"
           >Jump
           </button>
@@ -28,6 +29,9 @@
             class="duck"
             (pointerdown)="onButtonEvent($event, 'game-duck-begin')"
             (pointerup)="onButtonEvent($event, 'game-duck-end')"
+            (touchstart)="onButtonEvent($event, 'game-duck-begin')"
+            (touchend)="onButtonEvent($event, 'game-duck-end')"
+            (click)="$event.stopPropagation()"
             (contextmenu)="$event.preventDefault()"
           >Duck
           </button>
@@ -37,8 +41,16 @@
             class="jump"
             (click)="onButtonEvent($event, 'game-playing')"
             (contextmenu)="$event.preventDefault()"
-          >Start!
-          </button>
+          >Start!</button>
+
+          @if (experimental) {
+            <button
+              type="button"
+              class="jump"
+              (click)="onFullScreen()"
+              (contextmenu)="$event.preventDefault()"
+            >Full</button>
+          }
         }
       </div>
     } @else {
@@ -46,6 +58,7 @@
     }
   </div>
 
+  <!-- PRESETS -->
   <div class="presets row w100">
     @for ($preset of config.presets; track $preset.name) {
       <button
@@ -57,6 +70,7 @@
     }
   </div>
 
+  <!-- SETTING SLIDERS -->
   <div class="controls">
     <div>
       Delay
@@ -105,6 +119,7 @@
     }
   </div>
 
+  <!-- OVERLAY WHEN WE DON'T HAVE KEYBOARD FOCUS -->
   <div
     class="message overlay row"
     [class.hidden]="appHasFocus()"

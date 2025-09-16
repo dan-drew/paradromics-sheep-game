@@ -14,7 +14,6 @@ import {GameConfigService} from "./game-config.service";
 import {Subscription, timer} from "rxjs";
 import {AppComponent} from "../app/app.component";
 import {LoggerService} from "../logger.service";
-import {assert} from "./assert";
 
 @Component({
   selector: 'app-game',

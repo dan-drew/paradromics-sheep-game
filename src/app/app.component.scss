@@ -1,9 +1,9 @@
 :host {
-  width: min-content;
+  //width: auto;
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
-  gap: 0.5in;
+  gap: 0.25in;
   align-items: center;
 
   &.iframe {
@@ -13,25 +13,30 @@
     padding: 10px;
 
     iframe {
+      align-self: center !important;
       width: 100%;
-      max-width: 600px;
-      height: 450px;
+      max-width: 500px;
+      height: 400px;
+      border: 1px solid var(--disabled-color);
+      border-radius: 5px;
     }
   }
 
-  //.game {
-  //  max-width: 100%;
-  //  overflow: hidden;
-  //}
+  .game {
+    max-width: 100%;
+    overflow: hidden;
+  }
 }
 
 .actions {
-  width: 80%;
+  padding: 0 10%;
   gap: 10px;
   margin-top: 5px;
+  justify-content: center;
 
   button {
     flex: 1;
+    max-width: 20ch;
     background: #f0fff0;
     border-radius: 10px;
     padding: 5px;

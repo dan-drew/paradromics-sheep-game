@@ -29,6 +29,7 @@ body {
   flex-wrap: nowrap;
 
   &.align-center { align-items: center; }
+  &.align-stretch { align-items: stretch; }
   &.justify-center { justify-content: center; }
   &.justify-evenly { justify-content: space-evenly; }
 }
@@ -127,9 +128,7 @@ button {
   font-style: normal;
   cursor: pointer;
 
-  &:hover {
-    //background: var(--disabled-fill-color);
-  }
+  filter: glow();
 }
 
 .hidden {
