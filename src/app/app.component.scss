@@ -25,6 +25,10 @@
   .game {
     max-width: 100%;
     overflow: hidden;
+
+    @media (min-width: 600px) {
+      max-width: 600px;
+    }
   }
 }
 
@@ -42,6 +46,11 @@
     padding: 5px;
     user-select: none;
   }
+}
+
+.instructions {
+  white-space: pre;
+  text-align: center;
 }
 
 .mobileFullScreen {
