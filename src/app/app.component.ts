@@ -1,4 +1,4 @@
-import {AfterViewInit, Component, effect, ElementRef, inject, signal, viewChild} from '@angular/core';
+import {AfterViewInit, Component, effect, ElementRef, inject, NgZone, signal, viewChild} from '@angular/core';
 import {SliderComponent} from "../slider/slider.component";
 import {GameComponent} from "../game/game.component";
 import {GameConfigService} from "../game/game-config.service";
@@ -11,6 +11,17 @@ const INSTRUCTIONS = {
   start: IS_MOBILE  ? 'Tap to start!' : 'Press &uarr; to Start!',
   playing: IS_MOBILE  ? 'Tap to jump' : 'Press &uarr; to Jump or &darr; to Duck',
 }
+
+type WindowEvent = string | { event: string, passive: boolean }
+
+// Window events to listen to
+const WINDOW_EVENTS: WindowEvent[] = [
+  'blur',
+  'focus',
+  { event: 'keydown', passive: false },
+  { event: 'keyup', passive: false },
+  { event: 'keypress', passive: false },
+]
 
 @Component({
   selector: 'app-root',
@@ -44,33 +55,39 @@ export class AppComponent implements AfterViewInit {
   title = 'Sheep Game';
 
   constructor() {
-    // Hide visibility options
-    if (URL_PARAMS.get('fog') === '0') {
-      this.config.config.fogDisabled = true
-      this.config.config.maxActionLatency = 1000
-    }
-
     // Handle iframe test mode
     if (URL_PARAMS.get('iframe') === '1') {
       const iframeParams = new URLSearchParams(URL_PARAMS)
       iframeParams.delete('iframe');
       const search = iframeParams.size > 0 ? `?${iframeParams}` : ''
       this.iframeSrc = `${window.location.protocol}//${window.location.host}${search}`
+    } else {
+      // Hide visibility options
+      if (URL_PARAMS.get('fog') === '0') {
+        this.config.config.fogDisabled = true
+        this.config.config.maxActionLatency = 1000
+      }
+
+      // Register for window events
+      if (!this.iframeSrc) {
+        WINDOW_EVENTS.forEach((event: WindowEvent) => {
+          if (typeof event === 'string') {
+            window.addEventListener(event, this)
+          } else {
+            window.addEventListener(event.event, this, {passive: event.passive})
+          }
+        })
+      }
+
+      // Dynamic updates
+      effect(() => {
+        this.config.lookAhead.set(this.config.maxLookAhead - this.reverseLookAhead())
+      });
+
+      effect(() => {
+        this.instructions.set(this.playing() ? INSTRUCTIONS.playing : INSTRUCTIONS.start)
+      })
     }
-
-    // Detect when the page gains or loses keyboard ocus
-    ['blur', 'focus'].forEach(effect => {
-      window.addEventListener(effect, this)
-    })
-
-    // Dynamic updates
-    effect(() => {
-      this.config.lookAhead.set(this.config.maxLookAhead - this.reverseLookAhead())
-    });
-
-    effect(() => {
-      this.instructions.set(this.playing() ? INSTRUCTIONS.playing : INSTRUCTIONS.start)
-    })
   }
 
   ngAfterViewInit() {
@@ -87,17 +104,26 @@ export class AppComponent implements AfterViewInit {
       case 'focus':
         this.appHasFocus.set(true);
         break
+      case 'keydown':
+      case 'keypress':
+      case 'keyup':
+        const key = (event as KeyboardEvent).key;
+        if (this.appHasFocus() && key.startsWith('Arrow')) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+        }
+        break
     }
   }
 
-  onButtonEvent(e: Event, gameEvent: string) {
+  protected onButtonEvent(e: Event, gameEvent: string) {
     // e.preventDefault();
     e.stopImmediatePropagation()
 
     this.game()?.trigger(gameEvent as GameEventType)
   }
 
-  onFullScreen() {
+  protected onFullScreen() {
     this.elementRef.nativeElement.requestFullscreen().then(() => {
       if ('lock' in screen.orientation) {
         //@ts-ignore

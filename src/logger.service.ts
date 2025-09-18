@@ -4,8 +4,6 @@ import { Injectable } from '@angular/core';
   providedIn: 'root'
 })
 export class LoggerService {
-  constructor() { }
-
   debug(message: string, ...args: any[]) {
     this.log('debug', message, args);
   }
@@ -18,7 +16,11 @@ export class LoggerService {
     this.log('error', message, args);
   }
 
-  private log(level: 'debug' | 'info' | 'error', message: string, args: any[]) {
+  trace(message: string, ...args: any[]) {
+    this.log('trace', message, args);
+  }
+
+  private log(level: 'debug' | 'info' | 'error' | 'trace', message: string, args: any[]) {
     console[level](`[Sheep][${this.now()}] ${message}`, ...args);
   }
 

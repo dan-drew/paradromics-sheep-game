@@ -64,7 +64,6 @@ export class GameComponent implements AfterViewInit {
     if (!this.resizeTimer) {
       this.resizeTimer = timer(100).subscribe(() => {
         delete this.resizeTimer
-        console.info('Resize timer');
         this.pageWidth.set(window.visualViewport!.width);
       })
     }

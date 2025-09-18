@@ -184,7 +184,7 @@ enum RunnerSounds {
 
 enum KeyCode {
   Up = 'ArrowUp',
-  Space = 'Space',
+  Space = ' ',
   Down = 'ArrowDown',
   Enter = 'Enter',
 }
@@ -435,12 +435,19 @@ export class Runner {
 
   private reportEvent(
     eventType: GameEventType,
-    { allowError = true }: {
-      allowError?: boolean
+    { allowError = true, source }: {
+      allowError?: boolean,
+      source?: Event
     } = {}
   ) {
     const originalEventType = eventType
     let errorType: GameErrorType = GameErrorType.Ignore
+
+    if (source) {
+      // Make sure the source event is only handled once
+      source.preventDefault()
+      source.stopImmediatePropagation()
+    }
 
     // Handle action events
     if (eventType === GameEventType.JumpBegin || eventType === GameEventType.DuckBegin) {
@@ -481,6 +488,10 @@ export class Runner {
         this.logger.debug(`Event ${eventType}`);
       }
     }
+
+    // if (eventType === GameEventType.JumpBegin) {
+    //     this.logger.trace('jump begin event!', source)
+    // }
 
     if (this.config.actionLatency > 0 && GAME_ACTION_EVENTS.has(eventType)) {
       this.pendingEvents.add(new PendingEvent(event, this.config.actionLatency, handler))
@@ -1154,7 +1165,7 @@ export class Runner {
    * Prevent space key press from scrolling.
    */
   private preventScrolling(e: KeyboardEvent) {
-    if (e.code === KeyCode.Space) {
+    if (e.key === KeyCode.Space) {
       e.preventDefault();
     }
   }
@@ -1272,7 +1283,7 @@ export class Runner {
     return (
       e instanceof KeyboardEvent
       && !e.repeat  // Prevent double-jumps from holding the key down
-      && runnerKeycodes.jump.includes(e.code)
+      && runnerKeycodes.jump.includes(e.key)
     )
   }
 
@@ -1280,7 +1291,7 @@ export class Runner {
     return (
       e instanceof KeyboardEvent
       && !e.repeat
-      && runnerKeycodes.duck.includes(e.code)
+      && runnerKeycodes.duck.includes(e.key)
     )
   }
 
@@ -1313,8 +1324,12 @@ export class Runner {
           || e.type === RunnerEvents.TOUCHSTART
           || this.isMobileMouseInput(e)
         ) {
-          e.preventDefault();
           let firstJump = false
+
+          // Make sure the event is only handled once
+          e.preventDefault();
+          e.stopImmediatePropagation()
+
           // Starting the game for the first time.
           if (!this.playing) {
             firstJump = true;
@@ -1336,11 +1351,10 @@ export class Runner {
           }
           // Start jump.
           if (/*!this.tRex.jumping &&*/ !this.tRex.ducking) {
-            this.reportEvent(GameEventType.JumpBegin, { allowError: !firstJump });
+            this.reportEvent(GameEventType.JumpBegin, { allowError: !firstJump, source: e });
           }
         } else if (this.playing && this.isDuckKeyEvent(e)) {
-          e.preventDefault();
-          this.reportEvent(GameEventType.DuckBegin)
+          this.reportEvent(GameEventType.DuckBegin, { source: e });
         }
       }
     }
@@ -1382,9 +1396,9 @@ export class Runner {
     const isJumpKey = this.isJumpKeyEvent(e) || e.type === RunnerEvents.TOUCHEND || e.type === RunnerEvents.POINTERUP;
 
     if (this.playing && this.isRunning() && isJumpKey) {
-      this.reportEvent(GameEventType.JumpEnd)
+      this.reportEvent(GameEventType.JumpEnd, { source: e });
     } else if (this.playing && this.isDuckKeyEvent(e)) {
-      this.reportEvent(GameEventType.DuckEnd)
+      this.reportEvent(GameEventType.DuckEnd, { source: e });
     } else if (this.crashed) {
       // Check that enough time has elapsed before allowing jump key to restart.
       const deltaTime = getTimeStamp() - this.time;
