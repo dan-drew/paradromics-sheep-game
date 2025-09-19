@@ -23,10 +23,10 @@ jobs:
         cache: 'npm'
     - run: npm run build
     - name: Upload static files as artifact
-        id: deployment
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist/dino-game/browser/
+      id: deployment
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: dist/dino-game/browser/
 
   deploy:
     # Add a dependency to the build job
