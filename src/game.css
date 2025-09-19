@@ -20,15 +20,9 @@ a {
   /*    url(../../security_interstitials/core/browser/resources/images/2x/info.png) 2x);*/
 }
 .icon-offline {
-  content: image-set(
-      url(100-error-offline.png) 1x,
-      url(200-error-offline.png) 2x);
   position: relative;
 }
 .icon-disabled {
-  content: image-set(
-      url(100-disabled.png) 1x,
-      url(200-disabled.png) 2x);
   width: 112px;
 }
 .hidden {
