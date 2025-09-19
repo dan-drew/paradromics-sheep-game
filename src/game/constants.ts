@@ -5,13 +5,13 @@
 import type {Dimensions} from './dimensions';
 
 export const URL_PARAMS = new URLSearchParams(window.location.search);
+export const USER_AGENT = window.navigator.userAgent
 
-// TODO(salg): Use preprocessor to filter IOS code at build time.
-export const IS_IOS: boolean = /CriOS/.test(window.navigator.userAgent);
+export const IS_IOS: boolean = /iPhone|iPad/.test(USER_AGENT);
 
 export const IS_HIDPI: boolean = true // window.devicePixelRatio > 1;
 
-export const IS_ANDROID = /Android/.test(window.navigator.userAgent)
+export const IS_ANDROID = /Android/.test(USER_AGENT);
 export const IS_MOBILE_TEST = URL_PARAMS.get('mobile') === '1';
 export const IS_MOBILE: boolean = IS_MOBILE_TEST || IS_IOS || IS_ANDROID
 
