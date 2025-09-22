@@ -24,7 +24,10 @@ jobs:
     - run: npm install
     - run: npm run build
 
+    - id: timestamp
+      run: echo "cleaned=$( echo ${{ github.event.head_commit.timestamp }} | tr -cd '[:alnum:]')" >> $GITHUB_OUTPUT
+
     - uses: actions/upload-artifact@v4
       with:
-        name: "sheep-game-${{ github.event.head_commit.timestamp }}"
+        name: "sheep-game-${{ steps.timestamp.outputs.cleaned }}"
         path: dist/dino-game/browser/
