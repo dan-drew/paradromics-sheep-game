@@ -65,6 +65,7 @@
         type="button"
         (click)="config.setPreset($preset)"
         [class.disabled]="playing()"
+        [disabled]="playing()"
       >{{ $preset.name }}
       </button>
     }

@@ -34,11 +34,23 @@ resource "aws_route53_record" "validation" {
 resource "aws_route53_record" "app" {
   zone_id = data.aws_route53_zone.root.zone_id
   name    = local.subdomain
-  type    = "A"
+  # type    = "A"
+  #
+  # alias {
+  #   evaluate_target_health = false
+  #   name                   = aws_cloudfront_distribution.app.domain_name
+  #   zone_id                = aws_cloudfront_distribution.app.hosted_zone_id
+  # }
 
-  alias {
-    evaluate_target_health = false
-    name                   = aws_cloudfront_distribution.app.domain_name
-    zone_id                = aws_cloudfront_distribution.app.hosted_zone_id
-  }
+  type = "CNAME"
+  ttl = 300
+  records = ["dan-drew.github.io"]
+}
+
+resource "aws_route53_record" "github" {
+  zone_id = data.aws_route53_zone.root.zone_id
+  name = "_github-pages-challenge-dan-drew"
+  type = "TXT"
+  ttl = 1500
+  records = ["e1c46159bf55f4113588d5d6803904"]
 }
