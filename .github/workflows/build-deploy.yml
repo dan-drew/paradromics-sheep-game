@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  DEPLOY_PAGES: ${{ env.GITHUB_REPOSITORY_OWNER == 'dan-drew' }}
+  DEPLOY_PAGES: ${{ github.repository_owner == 'dan-drew' }}
 
 jobs:
   build:
