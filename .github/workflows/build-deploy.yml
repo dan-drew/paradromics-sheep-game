@@ -34,6 +34,8 @@ jobs:
       with:
         name: "sheep-game-${{ steps.timestamp.outputs.cleaned }}"
         path: dist/dino-game/browser/
+        if-no-files-found: error
+        overwrite: true
 
     - name: Upload pages
       if: ${{ github.repository_owner == 'dan-drew' }}
@@ -41,8 +43,6 @@ jobs:
       uses: actions/upload-pages-artifact@v3
       with:
         path: dist/dino-game/browser/
-        if-no-files-found: error
-        overwrite: true
 
   deploy_pages:
     if: ${{ github.repository_owner == 'dan-drew' }}
