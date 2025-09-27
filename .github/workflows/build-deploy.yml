@@ -10,9 +10,6 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-env:
-  DEPLOY_PAGES: ${{ github.repository_owner == 'dan-drew' }}
-
 jobs:
   build:
 
@@ -39,7 +36,7 @@ jobs:
         path: dist/dino-game/browser/
 
     - name: Upload pages
-      if: ${{ env.DEPLOY_PAGES }}
+      if: ${{ github.repository_owner == 'dan-drew' }}
       id: deployment
       uses: actions/upload-pages-artifact@v3
       with:
@@ -48,7 +45,7 @@ jobs:
         overwrite: true
 
   deploy_pages:
-    if: ${{ env.DEPLOY_PAGES }}
+    if: ${{ github.repository_owner == 'dan-drew' }}
     needs: build
 
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
